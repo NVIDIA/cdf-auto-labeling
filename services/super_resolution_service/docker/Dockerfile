@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Build from the repository root:
-#   docker build -t paidf-super-resolution-service \
+#   docker build -t cdf-super-resolution-service \
 #     --build-arg PACKAGE_NAME=super-resolution-service \
 #     -f services/super_resolution_service/docker/Dockerfile .
 #

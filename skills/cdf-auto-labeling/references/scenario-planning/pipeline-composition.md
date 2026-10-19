@@ -1,6 +1,6 @@
 # Pipeline Composition
 
-The PAIDF runner composes supported stages into a pipeline. The agent selects a
+The CDF runner composes supported stages into a pipeline. The agent selects a
 subset of the canonical stages; the runner builds and executes Docker commands.
 There is no single fixed pipeline: each cookbook picks the stages it needs, run
 in their fixed relative order.

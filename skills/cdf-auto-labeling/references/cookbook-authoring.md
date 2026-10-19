@@ -1,4 +1,4 @@
-# PAIDF Auto-Labeling Cookbook Authoring
+# CDF Auto-Labeling Cookbook Authoring
 
 Use this skill when the user asks for a reusable agentic auto-labeling recipe,
 domain-specific pipeline cookbook, or production experiment template.
@@ -106,8 +106,8 @@ make run SCRIPT=workflow-runner:main \
   `<model-cache>`.
 - Do not introduce a second cookbook schema when the runner's YAML/JSON config
   can express the workflow.
-- Do not depend on non-PAIDF pipelines, modules, commands, or file locations. A
-  committed PAIDF cookbook must be self-contained within this repo and runnable
+- Do not depend on non-CDF pipelines, modules, commands, or file locations. A
+  committed CDF cookbook must be self-contained within this repo and runnable
   through `workflow-runner:main`.
 - Every cookbook should be dry-runnable with
   `make run SCRIPT=workflow-runner:main ARGS='--cookbook-file <config> --container-dry-run'`.

@@ -288,7 +288,7 @@ specific to the use case: the question bank, dense-caption prompt, detector
 class list, reasoning task sections, and stage budgets. Do not ship empty
 question-bank sections.
 
-When adding a new domain cookbook, use the repo-local PAIDF skills for prompt
+When adding a new domain cookbook, use the repo-local CDF skills for prompt
 and detector design. Domain prompts should be evidence-first, parser-aware, and
 explicit about uncertainty. Detector settings should separate directly mapped
 runner fields from detailed service flags kept with the detector node's `args`.

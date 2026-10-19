@@ -1,4 +1,4 @@
-# paidf-auto-labeling
+# cdf-auto-labeling
 
 A Python framework for pseudo-annotating large, unlabeled video and image datasets. Structured as a **uv workspace** (monorepo) with three layers:
 

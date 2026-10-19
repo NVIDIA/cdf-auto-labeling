@@ -1,8 +1,8 @@
 # Scenario Authoring
 
-Use this reference when creating a PAIDF auto-labeling cookbook for a domain or
+Use this reference when creating a CDF auto-labeling cookbook for a domain or
 when recreating an experiment in the new runner. The committed result must have
-no runtime dependency on non-PAIDF pipelines, commands, modules, or file locations.
+no runtime dependency on non-CDF pipelines, commands, modules, or file locations.
 
 ## Authoring Steps
 

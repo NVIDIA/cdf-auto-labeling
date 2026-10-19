@@ -49,7 +49,7 @@ other service.
 - [`AGENTS.md`](../../AGENTS.md) — code conventions, testing, CI/CD, and the
   full command reference (`make lint`, `make mypy`, `make test`, `make check`)
 - [`skills/`](../../skills/README.md) — task-shaped agent guidance, including
-  [workflow-stage-integration](../../skills/paidf-auto-labeling/references/workflow-stage-integration.md)
+  [workflow-stage-integration](../../skills/cdf-auto-labeling/references/workflow-stage-integration.md)
   for implementing or reviewing a single new stage or service end to end
 - [Package And Service Index](README.md#package-and-service-index) — every
   existing task/service README, for finding a close analog to model yours on

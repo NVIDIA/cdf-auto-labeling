@@ -20,38 +20,38 @@ options, and shared sidecar dataflow in one Auto-Labeling-specific command-line 
 
 ```text
 DataEntry JSONL
-  -> paidf-super-resolution-service                   optional, video
-  -> paidf-detection-and-tracking-{rfdetr,sam3}-service optional
-  -> paidf-referring-expressions-service              optional, image
-  -> paidf-captioning-service
-  -> paidf-grounding-2d-service                       optional, image
-  -> paidf-visual-qa-service                          optional
-  -> paidf-reasoning-service
-  -> paidf-training-export-service                    optional
-  -> paidf-event-and-person-attribute-search-service  optional (PAS)
+  -> cdf-super-resolution-service                   optional, video
+  -> cdf-detection-and-tracking-{rfdetr,sam3}-service optional
+  -> cdf-referring-expressions-service              optional, image
+  -> cdf-captioning-service
+  -> cdf-grounding-2d-service                       optional, image
+  -> cdf-visual-qa-service                          optional
+  -> cdf-reasoning-service
+  -> cdf-training-export-service                    optional
+  -> cdf-event-and-person-attribute-search-service  optional (PAS)
 ```
 
 The default image and build target names match the stage-service packages:
 
-- `super_resolution` — image `paidf-super-resolution-service`; build target
+- `super_resolution` — image `cdf-super-resolution-service`; build target
   `super-resolution-service:build`.
 - `detection_and_tracking` — image
-  `paidf-detection-and-tracking-rfdetr-service`; build target
+  `cdf-detection-and-tracking-rfdetr-service`; build target
   `detection-and-tracking-service:rfdetr`.
-- `referring_expressions` — image `paidf-referring-expressions-service`; build target
+- `referring_expressions` — image `cdf-referring-expressions-service`; build target
   `referring-expressions-service:main`.
-- `captioning` — image `paidf-captioning-service`; build target
+- `captioning` — image `cdf-captioning-service`; build target
   `captioning-service:main`.
-- `grounding_2d` — image `paidf-grounding-2d-service`; build target
+- `grounding_2d` — image `cdf-grounding-2d-service`; build target
   `grounding-2d-service:main`.
-- `visual_qa` — image `paidf-visual-qa-service`; build target
+- `visual_qa` — image `cdf-visual-qa-service`; build target
   `visual-qa-service:build`.
-- `reasoning` — image `paidf-reasoning-service`; build target
+- `reasoning` — image `cdf-reasoning-service`; build target
   `reasoning-service:build`.
-- `training_export` — image `paidf-training-export-service`; build target
+- `training_export` — image `cdf-training-export-service`; build target
   `training-export-service:build`.
 - `person_attribute_search` — image
-  `paidf-event-and-person-attribute-search-service`; build target
+  `cdf-event-and-person-attribute-search-service`; build target
   `event-and-person-attribute-search-service:build`.
 
 `reasoning` replaces the former `daft_export` stage: on `main`, DAFT export was
@@ -362,7 +362,7 @@ A cookbook can declare its container wiring once so a run only needs
 container:
   user: auto            # resolve to the invoking uid:gid
   images:               # pin per-stage images
-    detection_and_tracking: paidf-detection-and-tracking-sam3-service
+    detection_and_tracking: cdf-detection-and-tracking-sam3-service
   env:                  # merged with (not replaced by) --container-env
     SAM3_MODEL_PATH: /models/sam3
   mounts:               # merged with (not replaced by) --container-mount

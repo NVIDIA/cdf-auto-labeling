@@ -17,6 +17,7 @@ from build import (
     BuildableImage,
     BuildOptions,
     _redact_build_args,
+    _registered_image_identifier,
     _registry_cache_ref,
     _select_image_with_text_prompt,
     _single_platform_arch,
@@ -25,11 +26,26 @@ from build import (
     execute_build,
     format_gitlab_ci_config,
     format_image_list,
+    format_test_results_pipeline_config,
     main,
     parse_args,
     sanitize_docker_repo,
     sanitize_docker_tag,
 )
+
+
+def _image(
+    tmp_path: Path, project_name: str, image_name: str, version: str, local_tag: str
+) -> BuildableImage:
+    """Minimal BuildableImage for tests that only care about the registered -t tag."""
+    return BuildableImage(
+        target=f"{project_name}:{image_name}",
+        project_name=project_name,
+        version=version,
+        package_dir=tmp_path / project_name.replace("-", "_"),
+        image_name=image_name,
+        command=f"docker buildx build -t {local_tag} .",
+    )
 
 
 @pytest.fixture
@@ -63,6 +79,7 @@ def test_parse_args_no_args() -> None:
         target=None,
         list_images=False,
         gitlab_ci=False,
+        gitlab_ci_test_results=False,
         output_format="text",
         tag=None,
         push=False,
@@ -81,6 +98,7 @@ def test_parse_args_list_json() -> None:
         target=None,
         list_images=True,
         gitlab_ci=False,
+        gitlab_ci_test_results=False,
         output_format="json",
         tag=None,
         push=False,
@@ -94,6 +112,7 @@ def test_parse_args_tag_and_push() -> None:
         target="pkg-a:main",
         list_images=False,
         gitlab_ci=False,
+        gitlab_ci_test_results=False,
         output_format="text",
         tag="registry/pkg-a:tag",
         push=True,
@@ -143,11 +162,41 @@ def test_parse_args_gitlab_ci() -> None:
         target=None,
         list_images=False,
         gitlab_ci=True,
+        gitlab_ci_test_results=False,
         output_format="text",
         tag=None,
         push=False,
         platforms=DEFAULT_BUILD_PLATFORMS,
     )
+
+
+def test_parse_args_gitlab_ci_test_results() -> None:
+    options = parse_args(["--gitlab-ci-test-results"])
+    assert options == BuildOptions(
+        target=None,
+        list_images=False,
+        gitlab_ci=False,
+        gitlab_ci_test_results=True,
+        output_format="text",
+        tag=None,
+        push=False,
+        platforms=DEFAULT_BUILD_PLATFORMS,
+    )
+
+
+def test_parse_args_rejects_gitlab_ci_with_gitlab_ci_test_results() -> None:
+    with pytest.raises(ValueError, match="--gitlab-ci-test-results"):
+        parse_args(["--gitlab-ci", "--gitlab-ci-test-results"])
+
+
+def test_parse_args_rejects_list_with_gitlab_ci_test_results() -> None:
+    with pytest.raises(ValueError, match="--gitlab-ci-test-results"):
+        parse_args(["--list", "--gitlab-ci-test-results"])
+
+
+def test_parse_args_rejects_list_with_gitlab_ci() -> None:
+    with pytest.raises(ValueError, match="--gitlab-ci"):
+        parse_args(["--list", "--gitlab-ci"])
 
 
 def test_parse_args_rejects_extra_args_without_separator() -> None:
@@ -163,6 +212,18 @@ def test_parse_args_rejects_unknown_options() -> None:
 def test_parse_args_rejects_format_without_list() -> None:
     with pytest.raises(ValueError, match="--format"):
         parse_args(["pkg-a:main", "--format", "json"])
+
+
+def test_parse_args_rejects_explicit_format_matching_default() -> None:
+    # "text" is also the default, so this must not slip past the
+    # output_format != TEXT_FORMAT check.
+    with pytest.raises(ValueError, match="--format"):
+        parse_args(["pkg-a:main", "--format", "text"])
+
+
+def test_parse_args_rejects_gitlab_ci_test_results_with_format() -> None:
+    with pytest.raises(ValueError, match="--format"):
+        parse_args(["--gitlab-ci-test-results", "--format", "text"])
 
 
 def test_parse_args_rejects_list_with_tag() -> None:
@@ -633,12 +694,12 @@ def test_format_gitlab_ci_config_sanitizes_image_ref_parts(tmp_path: Path) -> No
         version="1.0.0+cu128",
         package_dir=tmp_path / "packages" / "pkg",
         image_name="gpu+sm90",
-        command="docker build -t paidf-pkg .",
+        command="docker build -t cdf-pkg .",
     )
 
     config = format_gitlab_ci_config([image])
 
-    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/paidf-pkg"' in config
+    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/cdf-pkg"' in config
     assert 'IMAGE_TAG="gpu-sm90-1.0.0-cu128-${CI_COMMIT_SHORT_SHA}.${LABEL}"' in config
 
 
@@ -649,12 +710,12 @@ def test_format_gitlab_ci_config_uses_registered_tag_as_repository(tmp_path: Pat
         version="0.1.0",
         package_dir=tmp_path / "services" / "captioning_service",
         image_name="main",
-        command="docker build -t paidf-captioning-service .",
+        command="docker build -t cdf-captioning-service .",
     )
 
     config = format_gitlab_ci_config([image])
 
-    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/paidf-captioning-service"' in config
+    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/cdf-captioning-service"' in config
 
 
 def test_format_gitlab_ci_config_uses_repository_from_local_tag(tmp_path: Path) -> None:
@@ -699,8 +760,9 @@ def test_format_gitlab_ci_config_allows_parent_child_pipeline_source(
 ) -> None:
     config = format_gitlab_ci_config(two_images)
 
-    # amd64 + arm64 + merge = three jobs per image, each rule-gated.
-    assert config.count('if: $CI_PIPELINE_SOURCE == "parent_pipeline"') == len(two_images) * 3
+    # amd64 + arm64 + merge + push-test-results = four jobs per image, each rule-gated,
+    # plus the one shared compute-ngc-label job.
+    assert config.count('if: $CI_PIPELINE_SOURCE == "parent_pipeline"') == len(two_images) * 4 + 1
 
 
 def test_format_gitlab_ci_config_targets_sdg_runners(
@@ -728,11 +790,11 @@ def _load_ci_jobs(images: list[BuildableImage]) -> tuple[dict, dict]:
 
     doc = yaml.safe_load(format_gitlab_ci_config(images))
     assert isinstance(doc, dict)
-    jobs = {key: value for key, value in doc.items() if key not in {"stages", "default"}}
+    jobs = {key: value for key, value in doc.items() if key not in {"include", "stages", "default"}}
     return doc, jobs
 
 
-def test_generated_pipeline_parses_with_three_distinct_jobs_per_image(
+def test_generated_pipeline_parses_with_four_distinct_jobs_per_image(
     two_images: list[BuildableImage],
 ) -> None:
     doc, jobs = _load_ci_jobs(two_images)
@@ -740,7 +802,10 @@ def test_generated_pipeline_parses_with_three_distinct_jobs_per_image(
     # Parsing as YAML (not substring matching) catches indentation that would
     # merge two jobs or misplace a key under the wrong block.
     assert doc["default"] == {"interruptible": True, "tags": ["sdg"]}
-    assert len(jobs) == len(two_images) * 3
+    # amd64 + arm64 + merge + push-test-results per image, plus the one shared
+    # compute-ngc-label job.
+    assert len(jobs) == len(two_images) * 4 + 1
+    assert "compute-ngc-label" in jobs
 
     for image in two_images:
         amd = jobs[f"build-publish:{image.target}:amd64"]
@@ -758,6 +823,22 @@ def test_generated_pipeline_parses_with_three_distinct_jobs_per_image(
             f"build-publish:{image.target}:arm64",
         ]
 
+        push_results = jobs[f"push-test-results:{image.target}"]
+        assert push_results["extends"] == ".push_junit_results_to_ngc"
+        # Must wait on the image's own merge job — not just the parent unit-test
+        # artifact — so results are never pushed for a version whose image build
+        # is still in flight or later fails.
+        assert push_results["needs"] == [
+            {"job": "compute-ngc-label", "artifacts": True},
+            {"pipeline": "$UPA_PARENT_PIPELINE_ID", "job": "unit-test", "artifacts": True},
+            f"build-publish:{image.target}",
+        ]
+        image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
+        image_version = sanitize_docker_tag(image.version)
+        assert push_results["variables"]["NGC_VERSION_TAG"] == (
+            f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.${{LABEL}}"
+        )
+
 
 def test_generated_pipeline_wires_base_needs_as_parsed_yaml(tmp_path: Path) -> None:
     _, jobs = _load_ci_jobs(_base_and_dependent(tmp_path))
@@ -773,6 +854,111 @@ def test_generated_pipeline_wires_base_needs_as_parsed_yaml(tmp_path: Path) -> N
     # The base arch jobs sit at the root of the graph.
     assert "needs" not in jobs[f"{base}:amd64"]
     assert "needs" not in jobs[f"{base}:arm64"]
+
+
+# --- format_test_results_pipeline_config ---
+
+
+def test_format_test_results_pipeline_config_creates_one_job_per_image(
+    two_images: list[BuildableImage],
+) -> None:
+    config = format_test_results_pipeline_config(two_images)
+
+    assert '"push-test-results:pkg-a:main":' in config
+    assert '"push-test-results:pkg-b:gpu":' in config
+    assert 'NGC_VERSION_TAG: "pkg-a-1.2.3-${CI_COMMIT_SHORT_SHA}.main"' in config
+    assert 'NGC_VERSION_TAG: "pkg-b-gpu-4.5.6-${CI_COMMIT_SHORT_SHA}.main"' in config
+
+
+def test_format_test_results_pipeline_config_targets_sdg_runners(
+    two_images: list[BuildableImage],
+) -> None:
+    config = format_test_results_pipeline_config(two_images)
+
+    assert "default:\n  interruptible: true\n  tags:\n    - sdg\n" in config
+
+
+def test_format_test_results_pipeline_config_never_depends_on_a_container_build(
+    two_images: list[BuildableImage],
+) -> None:
+    # The whole point of this pipeline is to push test results without waiting
+    # on (or triggering) any image build/publish job.
+    config = format_test_results_pipeline_config(two_images)
+
+    assert "build-publish" not in config
+    assert "compute-ngc-label" not in config
+
+
+def test_format_test_results_pipeline_config_parses_with_expected_jobs(
+    two_images: list[BuildableImage],
+) -> None:
+    doc = yaml.safe_load(format_test_results_pipeline_config(two_images))
+    assert isinstance(doc, dict)
+    jobs = {key: value for key, value in doc.items() if key not in {"include", "stages", "default"}}
+
+    assert doc["default"] == {"interruptible": True, "tags": ["sdg"]}
+    assert doc["stages"] == ["test-results"]
+    assert len(jobs) == len(two_images)
+
+    for image in two_images:
+        job = jobs[f"push-test-results:{image.target}"]
+        assert job["extends"] == ".push_junit_results_to_ngc"
+        assert job["stage"] == "test-results"
+        # Only needs the parent pipeline's unit-test artifact — no per-image
+        # image-build dependency, so this runs on every merge to main.
+        assert job["needs"] == [
+            {"pipeline": "$UPA_PARENT_PIPELINE_ID", "job": "unit-test", "artifacts": True},
+        ]
+        assert job["rules"] == [
+            {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline"', "when": "on_success"}
+        ]
+        image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
+        image_version = sanitize_docker_tag(image.version)
+        assert job["variables"]["NGC_VERSION_TAG"] == (
+            f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.main"
+        )
+
+
+def test_format_test_results_pipeline_config_disambiguates_shared_repository(
+    tmp_path: Path,
+) -> None:
+    shared_repo_images = [
+        _image(
+            tmp_path,
+            "upa-media-base",
+            "ubuntu-input-only",
+            "1.1.0",
+            "upa-media-base:ubuntu-input-only",
+        ),
+        _image(tmp_path, "upa-media-base", "ubuntu-vp9", "1.1.0", "upa-media-base:ubuntu-vp9"),
+    ]
+
+    config = format_test_results_pipeline_config(shared_repo_images)
+
+    assert (
+        'NGC_VERSION_TAG: "upa-media-base_cubuntu-input-only-1.1.0-${CI_COMMIT_SHORT_SHA}.main"'
+        in config
+    )
+    assert (
+        'NGC_VERSION_TAG: "upa-media-base_cubuntu-vp9-1.1.0-${CI_COMMIT_SHORT_SHA}.main"' in config
+    )
+
+
+def test_registered_image_identifier_preserves_repository_tag_boundary(tmp_path: Path) -> None:
+    identifiers = {
+        _registered_image_identifier(_image(tmp_path, "one", "main", "1.0.0", local_tag))
+        for local_tag in ("foo-bar:baz", "foo:bar-baz", "foo_cbar-baz")
+    }
+
+    assert identifiers == {"foo-bar_cbaz", "foo_cbar-baz", "foo__cbar-baz"}
+
+
+def test_registered_images_have_unique_test_result_tags() -> None:
+    tags = [
+        (_registered_image_identifier(image), sanitize_docker_tag(image.version))
+        for image in discover_buildable_images()
+    ]
+    assert len(tags) == len(set(tags))
 
 
 # --- execute_build ---

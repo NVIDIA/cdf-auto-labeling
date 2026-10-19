@@ -22,7 +22,7 @@ When changing skills or cookbooks, run:
 
 ```bash
 git diff --check
-rg "services/workflow_runner/cookbooks|\\.agents/skills" --glob '!skills/paidf-auto-labeling/references/workflow-stage-integration/validation-checklist.md'
+rg "services/workflow_runner/cookbooks|\\.agents/skills" --glob '!skills/cdf-auto-labeling/references/workflow-stage-integration/validation-checklist.md'
 ```
 
 The scan should return no stale service-local cookbook paths or old skill-root

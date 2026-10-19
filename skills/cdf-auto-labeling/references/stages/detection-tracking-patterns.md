@@ -1,6 +1,6 @@
 # Detection And Tracking Patterns
 
-The PAIDF `workflow-runner` service exposes a small stable surface for detection
+The CDF `workflow-runner` service exposes a small stable surface for detection
 and tracking. Backend selection and class/prompt lists live in the cookbook;
 all backend tuning lives in `stage_args.detection_and_tracking`.
 

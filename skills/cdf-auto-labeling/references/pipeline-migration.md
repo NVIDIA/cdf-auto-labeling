@@ -1,4 +1,4 @@
-# PAIDF Auto-Labeling Pipeline Migration
+# CDF Auto-Labeling Pipeline Migration
 
 Use this skill to guide repo-to-UPA migrations. The goal is to make new
 pipelines arrive as reusable UPA capabilities plus cookbooks, not as piles of

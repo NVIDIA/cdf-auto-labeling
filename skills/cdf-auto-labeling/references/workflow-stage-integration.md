@@ -1,4 +1,4 @@
-# PAIDF Workflow Stage Integration
+# CDF Workflow Stage Integration
 
 Use this skill when the user asks to add a new stage/service, wire a pending
 architecture into the workflow runner, or review a stage MR for runner readiness.

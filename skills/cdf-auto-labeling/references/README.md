@@ -1,6 +1,6 @@
-# PAIDF Auto-Labeling Skill References
+# CDF Auto-Labeling Skill References
 
-Task-shaped guidance used by the `paidf-auto-labeling` skill. Read `../SKILL.md`
+Task-shaped guidance used by the `cdf-auto-labeling` skill. Read `../SKILL.md`
 first, then the matching page.
 
 ## Planning And Authoring

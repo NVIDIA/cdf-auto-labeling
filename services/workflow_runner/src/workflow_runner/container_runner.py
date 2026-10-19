@@ -86,15 +86,15 @@ PIPELINE_STAGES: dict[PipelineName, tuple[StageName, ...]] = {
 }
 
 DEFAULT_STAGE_IMAGES: dict[StageName, str] = {
-    "super_resolution": "paidf-super-resolution-service",
-    "detection_and_tracking": "paidf-detection-and-tracking-rfdetr-service",
-    "referring_expressions": "paidf-referring-expressions-service",
-    "grounding_2d": "paidf-grounding-2d-service",
-    "captioning": "paidf-captioning-service",
-    "visual_qa": "paidf-visual-qa-service",
-    "reasoning": "paidf-reasoning-service",
-    "training_export": "paidf-training-export-service",
-    "person_attribute_search": "paidf-event-and-person-attribute-search-service",
+    "super_resolution": "cdf-super-resolution-service",
+    "detection_and_tracking": "cdf-detection-and-tracking-rfdetr-service",
+    "referring_expressions": "cdf-referring-expressions-service",
+    "grounding_2d": "cdf-grounding-2d-service",
+    "captioning": "cdf-captioning-service",
+    "visual_qa": "cdf-visual-qa-service",
+    "reasoning": "cdf-reasoning-service",
+    "training_export": "cdf-training-export-service",
+    "person_attribute_search": "cdf-event-and-person-attribute-search-service",
 }
 
 DEFAULT_BUILD_TARGETS: dict[StageName, str] = {
@@ -621,7 +621,7 @@ def parse_stage_args(raw_args: tuple[str, ...]) -> dict[StageName, tuple[str, ..
 def default_tracking_image(tracker: str) -> str:
     """Return the default tracking service image for a tracker backend."""
     return (
-        "paidf-detection-and-tracking-sam3-service"
+        "cdf-detection-and-tracking-sam3-service"
         if tracker.startswith("sam3")
         else DEFAULT_STAGE_IMAGES["detection_and_tracking"]
     )

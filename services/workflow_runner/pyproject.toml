@@ -28,7 +28,7 @@ main = [
 ]
 
 [tool.build.images]
-workflow-runner = "docker buildx build -t paidf-workflow-runner --build-arg PACKAGE_NAME=workflow-runner -f services/workflow_runner/docker/Dockerfile ."
+workflow-runner = "docker buildx build -t cdf-workflow-runner --build-arg PACKAGE_NAME=workflow-runner -f services/workflow_runner/docker/Dockerfile ."
 
 [build-system]
 requires = ["hatchling"]

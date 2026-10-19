@@ -1,7 +1,7 @@
 [project]
 name = "super-resolution"
 version = "1.1.0"
-description = "SeedVR2 super-resolution task for PAIDF Auto-Labeling"
+description = "SeedVR2 super-resolution task for CDF Auto-Labeling"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [

@@ -34,9 +34,9 @@ main = [
 
 [tool.build.images]
 # Slim CPU image for CI / VLM-only. Live GPU grounding uses the sam3 flavor.
-main = "docker buildx build -t paidf-grounding-2d-service --build-arg PACKAGE_NAME=grounding-2d-service -f services/grounding_2d_service/docker/Dockerfile ."
+main = "docker buildx build -t cdf-grounding-2d-service --build-arg PACKAGE_NAME=grounding-2d-service -f services/grounding_2d_service/docker/Dockerfile ."
 # Independent GPU/SAM3 image (no sibling FROM detection).
-sam3 = "docker buildx build -t paidf-grounding-2d-sam3-service --build-arg PACKAGE_NAME=grounding-2d-service --build-arg RUNTIME_FLAVOR=sam3 -f services/grounding_2d_service/docker/Dockerfile.gpu ."
+sam3 = "docker buildx build -t cdf-grounding-2d-sam3-service --build-arg PACKAGE_NAME=grounding-2d-service --build-arg RUNTIME_FLAVOR=sam3 -f services/grounding_2d_service/docker/Dockerfile.gpu ."
 
 [build-system]
 requires = ["hatchling"]

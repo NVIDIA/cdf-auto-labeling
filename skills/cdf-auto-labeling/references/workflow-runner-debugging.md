@@ -1,4 +1,4 @@
-# PAIDF Workflow Runner Debugging
+# CDF Workflow Runner Debugging
 
 Use this skill when the user asks for an end-to-end agentic auto-labeling run, a
 container-by-container experiment, generated container command review, or a

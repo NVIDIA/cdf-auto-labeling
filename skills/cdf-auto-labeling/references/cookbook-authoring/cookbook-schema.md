@@ -1,7 +1,7 @@
-# PAIDF Auto-Labeling Cookbook Schema
+# CDF Auto-Labeling Cookbook Schema
 
 Cookbooks are runner configs under repo-root `cookbooks/<scenario>/`.
-The PAIDF `workflow-runner` service accepts YAML or JSON through `--cookbook-file`.
+The CDF `workflow-runner` service accepts YAML or JSON through `--cookbook-file`.
 
 - [Top-Level Fields](#top-level-fields)
 - [Runner Stage Model](#runner-stage-model)

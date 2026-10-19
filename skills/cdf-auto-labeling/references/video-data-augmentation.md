@@ -1,8 +1,8 @@
-# PAIDF Video Data Augmentation Pipeline
+# CDF Video Data Augmentation Pipeline
 
 Use this skill when the user wants to RUN the end-to-end Video Data
 Augmentation pipeline (traffic-safety use case) on a clip or media directory
-through the PAIDF `workflow-runner` container. The shipped cookbook is
+through the CDF `workflow-runner` container. The shipped cookbook is
 `cookbooks/video_data_augmentation/configs/pipeline_video.yaml` (pipeline:
 `video`). Build a complete run, then obtain explicit user approval before
 executing any Docker command.

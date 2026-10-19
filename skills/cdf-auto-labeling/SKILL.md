@@ -1,14 +1,14 @@
 ---
-name: paidf-auto-labeling
+name: cdf-auto-labeling
 description: >-
-  Use when a user needs to get started with PAIDF Auto-Labeling, plan a
+  Use when a user needs to get started with CDF Auto-Labeling, plan a
   scenario, run or debug a shipped cookbook, author prompts or cookbooks,
   migrate a pipeline, or configure a stage. Confirm critical inputs (data
   path, output path, endpoints) and ask when any are missing. This is a
   router: read the matching reference instead of inventing a workflow.
 license: Apache-2.0
 owner: NVIDIA
-service: physical-ai-data-factory
+service: cosmos-data-factory
 version: 1.1.0
 reviewed: 2026-09-14
 author: "NVIDIA <opensource@nvidia.com>"
@@ -17,9 +17,9 @@ metadata:
   tags: [getting-started, onboarding, new-domain, quickstart, new-use-case]
 ---
 
-# PAIDF Auto-Labeling
+# CDF Auto-Labeling
 
-Use this skill when a user wants to kick off PAIDF Auto-Labeling on their
+Use this skill when a user wants to kick off CDF Auto-Labeling on their
 own data, domain, or use case, or when the request matches a shipped cookbook,
 stage, authoring, or migration task. This is a router: sequence the specialized
 references instead of duplicating their detail.
@@ -80,7 +80,7 @@ Stage references: [super-resolution](references/stages/super-resolution.md),
    [workflow-runner-debugging](references/workflow-runner-debugging.md).
 
 Adopting an existing external annotation or dataset-generation repository into
-PAIDF instead of starting from a shipped cookbook is a migration task; use
+CDF instead of starting from a shipped cookbook is a migration task; use
 [pipeline-migration](references/pipeline-migration.md) for that path.
 
 ## Examples
@@ -127,5 +127,5 @@ make run SCRIPT=workflow-runner:main \
 - For reasoning-capable models (for example Gemini 3 Flash), raise `max_tokens`
   on the `visual_qa` and `reasoning` LLM substages to avoid the thinking-token
   tax; keep the default cap for non-reasoning models.
-- Do not rely on non-PAIDF pipelines, commands, or file locations. A first run
+- Do not rely on non-CDF pipelines, commands, or file locations. A first run
   must be reproducible through `workflow-runner:main` inside this repo.

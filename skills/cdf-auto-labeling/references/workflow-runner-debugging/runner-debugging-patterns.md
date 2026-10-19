@@ -1,6 +1,6 @@
 # Workflow Runner Debugging Patterns
 
-Use the PAIDF `workflow-runner` service as the local execution layer. The runner
+Use the CDF `workflow-runner` service as the local execution layer. The runner
 owns Docker or Podman command construction, path normalization, identity bind
 mounts, stage ordering, image build dispatch, dry-run mode, and policy handling.
 It is not a scheduler; OSMO or Airflow should own production scheduling,

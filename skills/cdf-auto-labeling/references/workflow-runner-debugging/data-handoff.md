@@ -1,6 +1,6 @@
 # Data Handoff Contract
 
-PAIDF auto-labeling containers exchange state through the DAFT scene directory
+CDF auto-labeling containers exchange state through the DAFT scene directory
 for each `DataEntry`.
 
 ## Input Record

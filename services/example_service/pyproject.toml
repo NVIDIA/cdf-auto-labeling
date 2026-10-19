@@ -34,7 +34,7 @@ main = [
 # Registers Docker images with the workspace build picker. This tells the repo how to build your container.
 # Commands will be run from the repo root.
 [tool.build.images]
-build = "docker buildx build -t paidf-example-service --build-arg PACKAGE_NAME=example-service -f services/example_service/docker/Dockerfile ."
+build = "docker buildx build -t cdf-example-service --build-arg PACKAGE_NAME=example-service -f services/example_service/docker/Dockerfile ."
 
 [tool.build.image-bases]
 build = "upa-media-base:ubuntu-input-only"

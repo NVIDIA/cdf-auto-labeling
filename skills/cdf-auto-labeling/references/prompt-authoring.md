@@ -1,7 +1,7 @@
-# PAIDF Auto-Labeling Prompt Authoring
+# CDF Auto-Labeling Prompt Authoring
 
 Use this skill when a task needs high-quality prompts or question banks for a
-PAIDF auto-labeling cookbook.
+CDF auto-labeling cookbook.
 
 ## Workflow
 

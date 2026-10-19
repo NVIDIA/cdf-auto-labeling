@@ -1,6 +1,6 @@
 # Prompt Patterns
 
-Use these patterns when authoring PAIDF auto-labeling prompts. Prompts should
+Use these patterns when authoring CDF auto-labeling prompts. Prompts should
 improve evidence quality. They should not duplicate DAFT schema-writing logic
 unless the user or a specific captioning/VQA service contract requires a
 structured response.

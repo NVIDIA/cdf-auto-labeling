@@ -1,4 +1,4 @@
-# PAIDF Auto-Labeling Scenario Planning
+# CDF Auto-Labeling Scenario Planning
 
 Use this skill when the user asks what auto-labeling workflow to run, which
 annotations to generate, how to combine Dockerized stages, or how to design a
@@ -67,7 +67,7 @@ make run SCRIPT=workflow-runner:main \
   enough to answer the requested annotation goal.
 - Do not promise an end-to-end run for a stage whose service package or image is
   not present in the current branch.
-- Do not rely on non-PAIDF pipelines, commands, or file locations.
+- Do not rely on non-CDF pipelines, commands, or file locations.
 - For custom pipelines, preserve the shared `DataEntry.data_path` scene contract
   and active-media handoff rules.
 - There is no single fixed pipeline. Each cookbook selects a subset of the

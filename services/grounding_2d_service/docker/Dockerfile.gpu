@@ -9,7 +9,7 @@
 # This GPU Dockerfile is independent of detection-and-tracking (no sibling FROM).
 #
 # Build from the repository root:
-#   docker build -t paidf-grounding-2d-sam3-service \
+#   docker build -t cdf-grounding-2d-sam3-service \
 #     --build-arg PACKAGE_NAME=grounding-2d-service \
 #     --build-arg RUNTIME_FLAVOR=sam3 \
 #     --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch:26.07-py3 \

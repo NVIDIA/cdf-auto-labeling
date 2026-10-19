@@ -71,6 +71,7 @@ class BuildOptions:
     target: str | None
     list_images: bool
     gitlab_ci: bool
+    gitlab_ci_test_results: bool
     output_format: str
     tag: str | None
     push: bool
@@ -215,11 +216,13 @@ def parse_args(argv: list[str]) -> BuildOptions:
     target: str | None = None
     list_images = False
     gitlab_ci = False
+    gitlab_ci_test_results = False
     output_format = TEXT_FORMAT
     tag: str | None = None
     push = False
     platforms = DEFAULT_BUILD_PLATFORMS
     platform_flag_used = False
+    format_flag_used = False
     build_args: list[str] = []
 
     def _validate_build_arg(value: str) -> str:
@@ -236,6 +239,8 @@ def parse_args(argv: list[str]) -> BuildOptions:
             list_images = True
         elif arg == "--gitlab-ci":
             gitlab_ci = True
+        elif arg == "--gitlab-ci-test-results":
+            gitlab_ci_test_results = True
         elif arg == "--push":
             push = True
         elif arg == "--platform":
@@ -256,8 +261,10 @@ def parse_args(argv: list[str]) -> BuildOptions:
             if index >= len(argv):
                 raise ValueError("Expected a value after `--format`.")
             output_format = argv[index]
+            format_flag_used = True
         elif arg.startswith("--format="):
             output_format = arg.removeprefix("--format=")
+            format_flag_used = True
         elif arg == "--tag":
             index += 1
             if index >= len(argv):
@@ -291,8 +298,10 @@ def parse_args(argv: list[str]) -> BuildOptions:
     platform_overridden = platform_flag_used
 
     target = positionals[0] if positionals else None
-    if list_images and gitlab_ci:
-        raise ValueError("Do not pass `--list` with `--gitlab-ci`.")
+    if gitlab_ci and gitlab_ci_test_results:
+        raise ValueError("Do not pass `--gitlab-ci` with `--gitlab-ci-test-results`.")
+    if list_images and (gitlab_ci or gitlab_ci_test_results):
+        raise ValueError("Do not pass `--list` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
     if list_images and target:
         raise ValueError("Do not pass a build target with `--list`.")
     if list_images and tag:
@@ -301,25 +310,30 @@ def parse_args(argv: list[str]) -> BuildOptions:
         raise ValueError("Do not pass `--push` with `--list`.")
     if list_images and platform_overridden:
         raise ValueError("Do not pass `--platform` with `--list`.")
-    if gitlab_ci and target:
-        raise ValueError("Do not pass a build target with `--gitlab-ci`.")
-    if gitlab_ci and tag:
-        raise ValueError("Do not pass `--tag` with `--gitlab-ci`.")
-    if gitlab_ci and push:
-        raise ValueError("Do not pass `--push` with `--gitlab-ci`.")
-    if gitlab_ci and platform_overridden:
-        raise ValueError("Do not pass `--platform` with `--gitlab-ci`.")
-    if gitlab_ci and output_format != TEXT_FORMAT:
-        raise ValueError("Do not pass `--format` with `--gitlab-ci`.")
-    if not list_images and output_format != TEXT_FORMAT:
+    if (gitlab_ci or gitlab_ci_test_results) and target:
+        raise ValueError(
+            "Do not pass a build target with `--gitlab-ci`/`--gitlab-ci-test-results`."
+        )
+    if (gitlab_ci or gitlab_ci_test_results) and tag:
+        raise ValueError("Do not pass `--tag` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
+    if (gitlab_ci or gitlab_ci_test_results) and push:
+        raise ValueError("Do not pass `--push` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
+    if (gitlab_ci or gitlab_ci_test_results) and platform_overridden:
+        raise ValueError("Do not pass `--platform` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
+    if (gitlab_ci or gitlab_ci_test_results) and format_flag_used:
+        raise ValueError("Do not pass `--format` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
+    if not list_images and format_flag_used:
         raise ValueError("`--format` can only be used with `--list`.")
-    if build_args and (list_images or gitlab_ci):
-        raise ValueError("Do not pass `--build-arg` with `--list` or `--gitlab-ci`.")
+    if build_args and (list_images or gitlab_ci or gitlab_ci_test_results):
+        raise ValueError(
+            "Do not pass `--build-arg` with `--list`, `--gitlab-ci`, or `--gitlab-ci-test-results`."
+        )
 
     return BuildOptions(
         target=target,
         list_images=list_images,
         gitlab_ci=gitlab_ci,
+        gitlab_ci_test_results=gitlab_ci_test_results,
         output_format=output_format,
         tag=tag,
         push=push,
@@ -661,8 +675,75 @@ def _render_merge_job(image: BuildableImage) -> list[str]:
     ]
 
 
-def _registered_image_repository(image: BuildableImage) -> str:
-    """Return the unqualified repository declared by an image build command."""
+def _render_compute_label_job() -> list[str]:
+    """Render a job that writes LABEL to a dotenv artifact other jobs in this child
+    pipeline can read as a plain CI/CD variable — the same LABEL every
+    build-publish:<target> job already derives inline, computed once here so
+    push-test-results:<target> can reference it in a `variables:` value without
+    overriding `.push_junit_results_to_ngc`'s own before_script/script.
+    """
+
+    return [
+        "compute-ngc-label:",
+        "  stage: build",
+        "  image: docker:28.4.0",
+        "  needs: []",
+        "  rules:",
+        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
+        "      when: on_success",
+        "  script:",
+        *_LABEL_SCRIPT_LINES,
+        '      echo "LABEL=$LABEL" > label.env',
+        "  artifacts:",
+        "    reports:",
+        "      dotenv: label.env",
+        "",
+    ]
+
+
+def _render_push_test_results_job(image: BuildableImage) -> list[str]:
+    """Render the job that pushes unit-test results to NGC under this image's exact
+    version tag, reusing test_report.xml from the PARENT pipeline's unit-test job
+    (via `needs: - pipeline:`) rather than re-running the test suite in this child
+    pipeline.
+
+    Needs the image's own merge job (`build-publish:<target>`), not just
+    compute-ngc-label/unit-test — otherwise this could push results under a version
+    tag whose image build is still in flight or later fails, orphaning that tag on
+    the dashboard with no matching published image.
+    """
+
+    job_name = f"push-test-results:{image.target}"
+    image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
+    image_version = sanitize_docker_tag(image.version)
+    ngc_version_tag = f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.${{LABEL}}"
+
+    return [
+        f"{_yaml_quote(job_name)}:",
+        "  extends: .push_junit_results_to_ngc",
+        "  stage: build",
+        "  needs:",
+        "    - job: compute-ngc-label",
+        "      artifacts: true",
+        "    - pipeline: $UPA_PARENT_PIPELINE_ID",
+        "      job: unit-test",
+        "      artifacts: true",
+        f"    - {_yaml_quote(f'build-publish:{image.target}')}",
+        "  rules:",
+        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
+        "      when: on_success",
+        "  variables:",
+        "    NGC_CLI_API_KEY: $METRO_PERF_NGC_API_KEY",
+        '    NGC_CLI_ORG: "nv-metropolis-dev"',
+        '    NGC_CLI_TEAM: "metropolis-sdg"',
+        '    JUNIT_XML_PATH: "test_report.xml"',
+        f"    NGC_VERSION_TAG: {_yaml_quote(ngc_version_tag)}",
+        "",
+    ]
+
+
+def _registered_image_local_tag(image: BuildableImage) -> str:
+    """Return the exact `-t`/`--tag` value declared by an image build command."""
 
     local_tag = _find_build_tag(shlex.split(image.command))
     if not local_tag:
@@ -674,13 +755,32 @@ def _registered_image_repository(image: BuildableImage) -> str:
             f"Build command for {image.target} must use an unqualified Docker repository "
             f"name for CI publication, got {local_tag}."
         )
-    return sanitize_docker_repo(local_tag.split(":", maxsplit=1)[0])
+    return local_tag
+
+
+def _registered_image_repository(image: BuildableImage) -> str:
+    """Return the unqualified repository declared by an image build command."""
+
+    return sanitize_docker_repo(_registered_image_local_tag(image).split(":", maxsplit=1)[0])
+
+
+def _registered_image_identifier(image: BuildableImage) -> str:
+    """Return the repository and optional tag as an NGC identifier."""
+    local_tag = _registered_image_local_tag(image)
+    return local_tag.replace("_", "__").replace(":", "_c")
 
 
 def format_gitlab_ci_config(images: list[BuildableImage]) -> str:
     """Render a dynamic GitLab child pipeline that builds each image per arch and merges."""
 
     lines = [
+        # Same shared push-to-NGC template augmentation/cosmos-anomalygen use for the
+        # SDG KPI dashboard's test-results feed.
+        "include:",
+        "  - project: a3ie-infra/gitlab-ci-templates",
+        "    ref: 4bccdc415487b031f28e607361946b9f0a4cd2e4",
+        "    file: templates/ngc-test-results-push.yml",
+        "",
         "stages:",
         "  - build",
         "",
@@ -691,6 +791,8 @@ def format_gitlab_ci_config(images: list[BuildableImage]) -> str:
         "",
     ]
 
+    lines.extend(_render_compute_label_job())
+
     by_target = {image.target: image for image in images}
     base_targets = {image.base_target for image in images if image.base_target is not None}
 
@@ -698,6 +800,79 @@ def format_gitlab_ci_config(images: list[BuildableImage]) -> str:
         for arch in _BUILD_ARCHES:
             lines.extend(_render_arch_build_job(image, by_target, base_targets, arch))
         lines.extend(_render_merge_job(image))
+        lines.extend(_render_push_test_results_job(image))
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_test_results_only_job(image: BuildableImage) -> list[str]:
+    """Render a job that pushes unit-test results to NGC under this image's exact
+    version tag, independent of any container build/publish.
+
+    Runs only from a main-push pipeline (see ``format_test_results_pipeline_config``),
+    where ``LABEL`` is always ``"main"`` — no MR variant, so unlike
+    ``_render_push_test_results_job`` there is no need for a
+    ``compute-ngc-label``/``build-publish:<target>`` dependency to resolve it. Every
+    merge to main produces a new ``CI_COMMIT_SHORT_SHA``, so this cannot collide
+    with a version tag from an earlier merge. The registered image identifier keeps
+    service repositories and tagged variants distinct.
+    """
+
+    job_name = f"push-test-results:{image.target}"
+    image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
+    image_version = sanitize_docker_tag(image.version)
+    ngc_version_tag = f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.main"
+
+    return [
+        f"{_yaml_quote(job_name)}:",
+        "  extends: .push_junit_results_to_ngc",
+        "  stage: test-results",
+        "  needs:",
+        "    - pipeline: $UPA_PARENT_PIPELINE_ID",
+        "      job: unit-test",
+        "      artifacts: true",
+        "  rules:",
+        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
+        "      when: on_success",
+        "  variables:",
+        "    NGC_CLI_API_KEY: $METRO_PERF_NGC_API_KEY",
+        '    NGC_CLI_ORG: "nv-metropolis-dev"',
+        '    NGC_CLI_TEAM: "metropolis-sdg"',
+        '    JUNIT_XML_PATH: "test_report.xml"',
+        f"    NGC_VERSION_TAG: {_yaml_quote(ngc_version_tag)}",
+        "",
+    ]
+
+
+def format_test_results_pipeline_config(images: list[BuildableImage]) -> str:
+    """Render a dynamic GitLab child pipeline that pushes every service's unit-test
+    results to NGC under its promotion-manifest version tag (``$source_name-
+    $source_version``), without building or publishing any container image.
+
+    This is the automatic counterpart to ``format_gitlab_ci_config``'s manual,
+    build-gated ``push-test-results:<target>`` jobs — it exists so the SDG KPI
+    dashboard gets fresh per-service test data on every merge to main, without
+    changing anything about how/when real images get built and published.
+    """
+
+    lines = [
+        "include:",
+        "  - project: a3ie-infra/gitlab-ci-templates",
+        "    ref: 4bccdc415487b031f28e607361946b9f0a4cd2e4",
+        "    file: templates/ngc-test-results-push.yml",
+        "",
+        "stages:",
+        "  - test-results",
+        "",
+        "default:",
+        "  interruptible: true",
+        "  tags:",
+        "    - sdg",
+        "",
+    ]
+
+    for image in images:
+        lines.extend(_render_test_results_only_job(image))
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -961,6 +1136,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if options.gitlab_ci:
             print(format_gitlab_ci_config(images), end="")
+            return 0
+
+        if options.gitlab_ci_test_results:
+            print(format_test_results_pipeline_config(images), end="")
             return 0
 
         image = choose_image(images, options.target)

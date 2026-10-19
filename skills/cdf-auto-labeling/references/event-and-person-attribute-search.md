@@ -1,4 +1,4 @@
-# PAIDF Visual Attribute Search
+# CDF Visual Attribute Search
 
 Use this skill to operate one of the four checked-in Visual Attribute Search workflows. Read
 [run-reference.md](event-and-person-attribute-search/run-reference.md) before generating commands.
