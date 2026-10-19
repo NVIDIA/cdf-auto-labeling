@@ -4,7 +4,7 @@
 """E2E tests for the detection-and-tracking service.
 
 Real detection/tracking backends (RF-DETR, SAM3) require GPU model weights, which
-are out of scope for the MR-gating suite. These tests cover the service wiring:
+are out of scope for the pre-merge suite. These tests cover the service wiring:
 
 * always-on: ``--disabled`` exits cleanly without touching media.
 * stub backend: run the weight-free ``stub`` tracker over a real video fixture

@@ -219,7 +219,7 @@ make test        # run tests, coverage, and JUnit reporting
 make check       # sync, format/fix, type-check, and test
 ```
 
-Before submitting a merge request, run the non-mutating checks or review any
+Before submitting a pull request, run the non-mutating checks or review any
 formatting changes produced by `make check`.
 
 Pre-commit hooks are optional. Install them with
@@ -244,7 +244,7 @@ Repository-local guidance for supported agent workflows lives under `skills/`.
   path.
 
 For non-sensitive questions and defects, consult the documentation first, then
-use the repository's GitLab issue workflow. Do not report security or conduct
+use the repository's GitHub issues. Do not report security or conduct
 concerns in a public issue.
 
 ## Responsible Use

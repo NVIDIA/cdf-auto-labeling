@@ -52,7 +52,7 @@ import task packages.
 
 ## Current Scope
 
-This MR extracts the duplicated captioning and visual QA model clients into the
+This change extracts the duplicated captioning and visual QA model clients into the
 shared layer. It intentionally does not redesign every task model interaction.
 The 2D grounding task keeps its image-path-oriented adapter and can move onto
 the shared request types in a later, behavior-preserving step.

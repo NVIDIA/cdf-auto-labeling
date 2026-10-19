@@ -4,8 +4,8 @@
 """E2E test for the workflow runner (always-on, dry-run).
 
 The workflow runner orchestrates the other services as Docker containers. A real
-multi-container run needs a GPU-capable container runtime, which the DinD CI
-service does not provide, so this MR-gating test validates the container plan in
+multi-container run needs a GPU-capable container runtime, which a Docker-in-Docker
+CI service does not provide, so this pre-merge test validates the container plan in
 ``--container-dry-run`` mode (no Docker or GPU required).
 """
 

@@ -8,7 +8,7 @@ launched exactly the way ``scripts/run.py`` launches it (``uv run --package
 <project> python -c <entrypoint-runner>``), so the ``main`` console-script name
 collision across packages is avoided and the tested path matches ``make run``.
 
-The suite runs as an MR gating job on a GPU runner while staying runnable
+The suite runs as a pre-merge gate while staying runnable
 locally. Individual tests self-skip when their prerequisites are missing so that
 always-on smoke tests gate every service with no GPU, ffmpeg, or network access,
 while endpoint-backed tests activate only when the external LLM/VLM endpoints are

@@ -10,15 +10,15 @@ targets in the form ``project_name:image_name``.
 
 Run a target directly with ``scripts/build.py project_name:image_name`` or
 choose one interactively. Registered commands are split with ``shlex`` and
-executed from the repository root. CI can list targets as JSON, replace the
-registered Docker tag, and push the resulting image after a successful build.
+executed from the repository root. Targets can be listed as JSON, the
+registered Docker tag can be replaced, and the resulting image can be pushed
+after a successful build.
 """
 
 from __future__ import annotations
 
 import importlib
 import json
-import re
 import shlex
 import subprocess
 import sys
@@ -32,8 +32,6 @@ ROOT_PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 TEXT_FORMAT = "text"
 JSON_FORMAT = "json"
-DOCKER_REPO_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
-DOCKER_TAG_PATTERN = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 
 # Platforms to build for when a buildx command is pushed as a manifest list.
 DEFAULT_BUILD_PLATFORMS = "linux/amd64,linux/arm64"
@@ -51,8 +49,8 @@ class BuildableImage:
         image_name: Key from the package's ``[tool.build.images]`` table.
         command: Docker build command to execute from the repository root.
         base_target: Optional ``project:image`` target of a shared base image that
-            this image's builder stage starts from. When set, CI builds the base
-            first and passes its pushed ref as the ``BUILDER_BASE_IMAGE`` build arg.
+            this image's builder stage starts from. Build the base first and pass
+            its ref as the ``BUILDER_BASE_IMAGE`` build arg.
     """
 
     target: str
@@ -70,8 +68,6 @@ class BuildOptions:
 
     target: str | None
     list_images: bool
-    gitlab_ci: bool
-    gitlab_ci_test_results: bool
     output_format: str
     tag: str | None
     push: bool
@@ -215,8 +211,6 @@ def parse_args(argv: list[str]) -> BuildOptions:
 
     target: str | None = None
     list_images = False
-    gitlab_ci = False
-    gitlab_ci_test_results = False
     output_format = TEXT_FORMAT
     tag: str | None = None
     push = False
@@ -237,10 +231,6 @@ def parse_args(argv: list[str]) -> BuildOptions:
         arg = argv[index]
         if arg == "--list":
             list_images = True
-        elif arg == "--gitlab-ci":
-            gitlab_ci = True
-        elif arg == "--gitlab-ci-test-results":
-            gitlab_ci_test_results = True
         elif arg == "--push":
             push = True
         elif arg == "--platform":
@@ -298,10 +288,6 @@ def parse_args(argv: list[str]) -> BuildOptions:
     platform_overridden = platform_flag_used
 
     target = positionals[0] if positionals else None
-    if gitlab_ci and gitlab_ci_test_results:
-        raise ValueError("Do not pass `--gitlab-ci` with `--gitlab-ci-test-results`.")
-    if list_images and (gitlab_ci or gitlab_ci_test_results):
-        raise ValueError("Do not pass `--list` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
     if list_images and target:
         raise ValueError("Do not pass a build target with `--list`.")
     if list_images and tag:
@@ -310,30 +296,14 @@ def parse_args(argv: list[str]) -> BuildOptions:
         raise ValueError("Do not pass `--push` with `--list`.")
     if list_images and platform_overridden:
         raise ValueError("Do not pass `--platform` with `--list`.")
-    if (gitlab_ci or gitlab_ci_test_results) and target:
-        raise ValueError(
-            "Do not pass a build target with `--gitlab-ci`/`--gitlab-ci-test-results`."
-        )
-    if (gitlab_ci or gitlab_ci_test_results) and tag:
-        raise ValueError("Do not pass `--tag` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
-    if (gitlab_ci or gitlab_ci_test_results) and push:
-        raise ValueError("Do not pass `--push` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
-    if (gitlab_ci or gitlab_ci_test_results) and platform_overridden:
-        raise ValueError("Do not pass `--platform` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
-    if (gitlab_ci or gitlab_ci_test_results) and format_flag_used:
-        raise ValueError("Do not pass `--format` with `--gitlab-ci`/`--gitlab-ci-test-results`.")
     if not list_images and format_flag_used:
         raise ValueError("`--format` can only be used with `--list`.")
-    if build_args and (list_images or gitlab_ci or gitlab_ci_test_results):
-        raise ValueError(
-            "Do not pass `--build-arg` with `--list`, `--gitlab-ci`, or `--gitlab-ci-test-results`."
-        )
+    if build_args and list_images:
+        raise ValueError("Do not pass `--build-arg` with `--list`.")
 
     return BuildOptions(
         target=target,
         list_images=list_images,
-        gitlab_ci=gitlab_ci,
-        gitlab_ci_test_results=gitlab_ci_test_results,
         output_format=output_format,
         tag=tag,
         push=push,
@@ -475,406 +445,6 @@ def format_image_list(images: list[BuildableImage], output_format: str) -> str:
         return json.dumps(payload, indent=2)
 
     raise ValueError("`output_format` must be one of: text, json.")
-
-
-def _yaml_quote(value: str) -> str:
-    """Quote a string as a YAML scalar using JSON-compatible quoting."""
-
-    return json.dumps(value)
-
-
-def sanitize_docker_repo(value: str) -> str:
-    """Normalize a project name for use as a Docker repository path component."""
-
-    normalized = re.sub(r"[^a-z0-9._-]+", "-", value.lower())
-    normalized = re.sub(r"[._-]{2,}", "-", normalized).strip("._-")
-    if not DOCKER_REPO_PATTERN.fullmatch(normalized):
-        raise ValueError(
-            f"Docker repository value `{value}` cannot be normalized to match "
-            f"`{DOCKER_REPO_PATTERN.pattern}`."
-        )
-    return normalized
-
-
-def sanitize_docker_tag(value: str) -> str:
-    """Normalize a value for use as a Docker tag component."""
-
-    normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).lstrip(".-")
-    if len(normalized) > 128:
-        raise ValueError("Docker tag values must be 128 characters or fewer after normalization.")
-    if not DOCKER_TAG_PATTERN.fullmatch(normalized):
-        raise ValueError(
-            f"Docker tag value `{value}` cannot be normalized to match "
-            f"`{DOCKER_TAG_PATTERN.pattern}`."
-        )
-    return normalized
-
-
-# Each image builds once per architecture on a native runner, then a merge job
-# combines the two single-arch images into one manifest-list tag. arm64 builds
-# run on the aarch64 pool (`arm-sdg`); amd64 stays on `sdg`.
-_BUILD_ARCHES: tuple[str, ...] = ("amd64", "arm64")
-_ARCH_RUNNER_TAGS: dict[str, str] = {"amd64": "sdg", "arm64": "arm-sdg"}
-
-# Shell that derives the image tag label (`mr<iid>` on MRs, `main` otherwise).
-_LABEL_SCRIPT_LINES: list[str] = [
-    "    - |",
-    '      if [ "$UPA_PARENT_PIPELINE_SOURCE" = "merge_request_event" ]; then',
-    '        if [ -z "$UPA_PARENT_MERGE_REQUEST_IID" ]; then',
-    '          echo "Error: UPA_PARENT_MERGE_REQUEST_IID is required for MR image tags"',
-    "          exit 1",
-    "        fi",
-    '        LABEL="mr$UPA_PARENT_MERGE_REQUEST_IID"',
-    "      else",
-    '        LABEL="main"',
-    "      fi",
-]
-
-# Shell that checks the required registry env vars and logs in to nvcr.io.
-_LOGIN_SCRIPT_LINES: list[str] = [
-    "    - |",
-    '      if [ -z "$METRO_PERF_NGC_API_KEY" ]; then',
-    '        echo "Error: METRO_PERF_NGC_API_KEY environment variable is not set"',
-    "        exit 1",
-    "      fi",
-    '      if [ -z "$UPA_IMAGE_REGISTRY_PREFIX" ]; then',
-    '        echo "Error: UPA_IMAGE_REGISTRY_PREFIX environment variable is not set"',
-    "        exit 1",
-    "      fi",
-    (
-        '    - echo "$METRO_PERF_NGC_API_KEY" | docker login nvcr.io '
-        '-u "\\$oauthtoken" --password-stdin'
-    ),
-]
-
-
-def _image_ref_script_lines(repository: str, image_name: str, image_version: str) -> list[str]:
-    """Shell that assembles the final ``IMAGE_REF`` from the registry prefix and tag."""
-
-    return [
-        f'      IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/{repository}"',
-        f'      IMAGE_TAG="{image_name}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.${{LABEL}}"',
-        '      IMAGE_REF="${IMAGE_REPOSITORY}:${IMAGE_TAG}"',
-    ]
-
-
-def _render_arch_build_job(
-    image: BuildableImage,
-    by_target: dict[str, BuildableImage],
-    base_targets: set[str],
-    arch: str,
-) -> list[str]:
-    """Render one native single-arch build job that pushes a per-arch ``-<arch>`` tag."""
-
-    job_name = f"build-publish:{image.target}:{arch}"
-    image_repository = _registered_image_repository(image)
-    image_name = sanitize_docker_tag(image.image_name)
-    image_version = sanitize_docker_tag(image.version)
-
-    # Shared base images run the full source compile, so give them more
-    # headroom than the services that consume them.
-    is_base = image.target in base_targets
-    timeout_line = "  timeout: 5 hours" if is_base else "  timeout: 2 hours 30 minutes"
-
-    needs_lines: list[str] = []
-    base_ref_lines: list[str] = []
-    build_command = (
-        f"      python3 scripts/build.py {_yaml_quote(image.target)} "
-        f'--tag "${{ARCH_REF}}" --platform linux/{arch} --push'
-    )
-    if image.base_target is not None:
-        base = by_target.get(image.base_target)
-        if base is None:
-            raise ValueError(
-                f"Image `{image.target}` references unknown base `{image.base_target}`."
-            )
-        base_repository = sanitize_docker_repo(base.project_name)
-        base_name = sanitize_docker_tag(base.image_name)
-        base_version = sanitize_docker_tag(base.version)
-        # Depend on the base merge job so BUILDER_BASE_IMAGE is a manifest list
-        # and this arch pulls its matching base variant.
-        needs_lines = ["  needs:", f"    - {_yaml_quote('build-publish:' + base.target)}"]
-        base_ref_lines = [
-            (
-                f'      BUILDER_BASE_IMAGE="$UPA_IMAGE_REGISTRY_PREFIX/{base_repository}:'
-                f'{base_name}-{base_version}-${{CI_COMMIT_SHORT_SHA}}.${{LABEL}}"'
-            ),
-        ]
-        build_command = (
-            f"      python3 scripts/build.py {_yaml_quote(image.target)} "
-            f'--tag "${{ARCH_REF}}" --platform linux/{arch} '
-            '--build-arg "BUILDER_BASE_IMAGE=${BUILDER_BASE_IMAGE}" --push'
-        )
-
-    return [
-        f"{_yaml_quote(job_name)}:",
-        "  stage: build",
-        "  image: docker:28.4.0",
-        "  rules:",
-        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
-        "      when: on_success",
-        "  tags:",
-        f"    - {_ARCH_RUNNER_TAGS[arch]}",
-        # One in-flight build per arch pool; amd64 and arm64 still run in parallel.
-        f"  resource_group: docker-build-{arch}",
-        timeout_line,
-        *needs_lines,
-        "  services:",
-        "    - docker:28.4.0-dind",
-        "  before_script:",
-        "    - apk add --no-cache python3",
-        "    - docker --version",
-        "    # Registry cache export needs the docker-container buildx driver.",
-        "    - docker buildx create --name upa-builder --driver docker-container --use",
-        "    - docker buildx inspect --bootstrap",
-        *_LOGIN_SCRIPT_LINES,
-        "  script:",
-        *_LABEL_SCRIPT_LINES,
-        *_image_ref_script_lines(image_repository, image_name, image_version),
-        *base_ref_lines,
-        f'      ARCH_REF="${{IMAGE_REF}}-{arch}"',
-        f'      echo "Building and pushing {image.target} ({arch}) as ${{ARCH_REF}}"',
-        build_command,
-        "",
-    ]
-
-
-def _render_merge_job(image: BuildableImage) -> list[str]:
-    """Render the job that combines the per-arch tags into one manifest-list tag."""
-
-    job_name = f"build-publish:{image.target}"
-    image_repository = _registered_image_repository(image)
-    image_name = sanitize_docker_tag(image.image_name)
-    image_version = sanitize_docker_tag(image.version)
-
-    needs_lines = ["  needs:"]
-    for arch in _BUILD_ARCHES:
-        needs_lines.append(f"    - {_yaml_quote(f'build-publish:{image.target}:{arch}')}")
-
-    manifest_sources = " ".join(f'"${{IMAGE_REF}}-{arch}"' for arch in _BUILD_ARCHES)
-
-    return [
-        f"{_yaml_quote(job_name)}:",
-        "  stage: build",
-        "  image: docker:28.4.0",
-        "  rules:",
-        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
-        "      when: on_success",
-        *needs_lines,
-        "  services:",
-        "    - docker:28.4.0-dind",
-        "  before_script:",
-        "    - docker --version",
-        *_LOGIN_SCRIPT_LINES,
-        "  script:",
-        *_LABEL_SCRIPT_LINES,
-        *_image_ref_script_lines(image_repository, image_name, image_version),
-        f'      echo "Merging {image.target} arch manifests into ${{IMAGE_REF}}"',
-        f'      docker buildx imagetools create -t "${{IMAGE_REF}}" {manifest_sources}',
-        "",
-    ]
-
-
-def _render_compute_label_job() -> list[str]:
-    """Render a job that writes LABEL to a dotenv artifact other jobs in this child
-    pipeline can read as a plain CI/CD variable — the same LABEL every
-    build-publish:<target> job already derives inline, computed once here so
-    push-test-results:<target> can reference it in a `variables:` value without
-    overriding `.push_junit_results_to_ngc`'s own before_script/script.
-    """
-
-    return [
-        "compute-ngc-label:",
-        "  stage: build",
-        "  image: docker:28.4.0",
-        "  needs: []",
-        "  rules:",
-        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
-        "      when: on_success",
-        "  script:",
-        *_LABEL_SCRIPT_LINES,
-        '      echo "LABEL=$LABEL" > label.env',
-        "  artifacts:",
-        "    reports:",
-        "      dotenv: label.env",
-        "",
-    ]
-
-
-def _render_push_test_results_job(image: BuildableImage) -> list[str]:
-    """Render the job that pushes unit-test results to NGC under this image's exact
-    version tag, reusing test_report.xml from the PARENT pipeline's unit-test job
-    (via `needs: - pipeline:`) rather than re-running the test suite in this child
-    pipeline.
-
-    Needs the image's own merge job (`build-publish:<target>`), not just
-    compute-ngc-label/unit-test — otherwise this could push results under a version
-    tag whose image build is still in flight or later fails, orphaning that tag on
-    the dashboard with no matching published image.
-    """
-
-    job_name = f"push-test-results:{image.target}"
-    image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
-    image_version = sanitize_docker_tag(image.version)
-    ngc_version_tag = f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.${{LABEL}}"
-
-    return [
-        f"{_yaml_quote(job_name)}:",
-        "  extends: .push_junit_results_to_ngc",
-        "  stage: build",
-        "  needs:",
-        "    - job: compute-ngc-label",
-        "      artifacts: true",
-        "    - pipeline: $UPA_PARENT_PIPELINE_ID",
-        "      job: unit-test",
-        "      artifacts: true",
-        f"    - {_yaml_quote(f'build-publish:{image.target}')}",
-        "  rules:",
-        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
-        "      when: on_success",
-        "  variables:",
-        "    NGC_CLI_API_KEY: $METRO_PERF_NGC_API_KEY",
-        '    NGC_CLI_ORG: "nv-metropolis-dev"',
-        '    NGC_CLI_TEAM: "metropolis-sdg"',
-        '    JUNIT_XML_PATH: "test_report.xml"',
-        f"    NGC_VERSION_TAG: {_yaml_quote(ngc_version_tag)}",
-        "",
-    ]
-
-
-def _registered_image_local_tag(image: BuildableImage) -> str:
-    """Return the exact `-t`/`--tag` value declared by an image build command."""
-
-    local_tag = _find_build_tag(shlex.split(image.command))
-    if not local_tag:
-        raise ValueError(
-            f"Build command for {image.target} must include -t or --tag for CI publication."
-        )
-    if "/" in local_tag:
-        raise ValueError(
-            f"Build command for {image.target} must use an unqualified Docker repository "
-            f"name for CI publication, got {local_tag}."
-        )
-    return local_tag
-
-
-def _registered_image_repository(image: BuildableImage) -> str:
-    """Return the unqualified repository declared by an image build command."""
-
-    return sanitize_docker_repo(_registered_image_local_tag(image).split(":", maxsplit=1)[0])
-
-
-def _registered_image_identifier(image: BuildableImage) -> str:
-    """Return the repository and optional tag as an NGC identifier."""
-    local_tag = _registered_image_local_tag(image)
-    return local_tag.replace("_", "__").replace(":", "_c")
-
-
-def format_gitlab_ci_config(images: list[BuildableImage]) -> str:
-    """Render a dynamic GitLab child pipeline that builds each image per arch and merges."""
-
-    lines = [
-        # Same shared push-to-NGC template augmentation/cosmos-anomalygen use for the
-        # SDG KPI dashboard's test-results feed.
-        "include:",
-        "  - project: a3ie-infra/gitlab-ci-templates",
-        "    ref: 4bccdc415487b031f28e607361946b9f0a4cd2e4",
-        "    file: templates/ngc-test-results-push.yml",
-        "",
-        "stages:",
-        "  - build",
-        "",
-        "default:",
-        "  interruptible: true",
-        "  tags:",
-        "    - sdg",
-        "",
-    ]
-
-    lines.extend(_render_compute_label_job())
-
-    by_target = {image.target: image for image in images}
-    base_targets = {image.base_target for image in images if image.base_target is not None}
-
-    for image in images:
-        for arch in _BUILD_ARCHES:
-            lines.extend(_render_arch_build_job(image, by_target, base_targets, arch))
-        lines.extend(_render_merge_job(image))
-        lines.extend(_render_push_test_results_job(image))
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _render_test_results_only_job(image: BuildableImage) -> list[str]:
-    """Render a job that pushes unit-test results to NGC under this image's exact
-    version tag, independent of any container build/publish.
-
-    Runs only from a main-push pipeline (see ``format_test_results_pipeline_config``),
-    where ``LABEL`` is always ``"main"`` — no MR variant, so unlike
-    ``_render_push_test_results_job`` there is no need for a
-    ``compute-ngc-label``/``build-publish:<target>`` dependency to resolve it. Every
-    merge to main produces a new ``CI_COMMIT_SHORT_SHA``, so this cannot collide
-    with a version tag from an earlier merge. The registered image identifier keeps
-    service repositories and tagged variants distinct.
-    """
-
-    job_name = f"push-test-results:{image.target}"
-    image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
-    image_version = sanitize_docker_tag(image.version)
-    ngc_version_tag = f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.main"
-
-    return [
-        f"{_yaml_quote(job_name)}:",
-        "  extends: .push_junit_results_to_ngc",
-        "  stage: test-results",
-        "  needs:",
-        "    - pipeline: $UPA_PARENT_PIPELINE_ID",
-        "      job: unit-test",
-        "      artifacts: true",
-        "  rules:",
-        '    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"',
-        "      when: on_success",
-        "  variables:",
-        "    NGC_CLI_API_KEY: $METRO_PERF_NGC_API_KEY",
-        '    NGC_CLI_ORG: "nv-metropolis-dev"',
-        '    NGC_CLI_TEAM: "metropolis-sdg"',
-        '    JUNIT_XML_PATH: "test_report.xml"',
-        f"    NGC_VERSION_TAG: {_yaml_quote(ngc_version_tag)}",
-        "",
-    ]
-
-
-def format_test_results_pipeline_config(images: list[BuildableImage]) -> str:
-    """Render a dynamic GitLab child pipeline that pushes every service's unit-test
-    results to NGC under its promotion-manifest version tag (``$source_name-
-    $source_version``), without building or publishing any container image.
-
-    This is the automatic counterpart to ``format_gitlab_ci_config``'s manual,
-    build-gated ``push-test-results:<target>`` jobs — it exists so the SDG KPI
-    dashboard gets fresh per-service test data on every merge to main, without
-    changing anything about how/when real images get built and published.
-    """
-
-    lines = [
-        "include:",
-        "  - project: a3ie-infra/gitlab-ci-templates",
-        "    ref: 4bccdc415487b031f28e607361946b9f0a4cd2e4",
-        "    file: templates/ngc-test-results-push.yml",
-        "",
-        "stages:",
-        "  - test-results",
-        "",
-        "default:",
-        "  interruptible: true",
-        "  tags:",
-        "    - sdg",
-        "",
-    ]
-
-    for image in images:
-        lines.extend(_render_test_results_only_job(image))
-
-    return "\n".join(lines).rstrip() + "\n"
 
 
 def _replace_build_tag(command: list[str], tag: str) -> list[str]:
@@ -1132,14 +702,6 @@ def main(argv: list[str] | None = None) -> int:
 
         if options.list_images:
             print(format_image_list(images, options.output_format))
-            return 0
-
-        if options.gitlab_ci:
-            print(format_gitlab_ci_config(images), end="")
-            return 0
-
-        if options.gitlab_ci_test_results:
-            print(format_test_results_pipeline_config(images), end="")
             return 0
 
         image = choose_image(images, options.target)

@@ -1,7 +1,7 @@
 # End-to-end (E2E) service tests
 
 This suite drives **every service** through its real CLI entrypoint and asserts on
-the artifacts it produces. It runs as a merge-request gate on a GPU runner and is
+the artifacts it produces. It runs as a pre-merge gate and is
 also runnable locally.
 
 ```bash

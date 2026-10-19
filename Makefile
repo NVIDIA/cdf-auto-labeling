@@ -34,7 +34,7 @@ help:
 	@echo "  mypy           Run mypy type checks"
 	@echo "  test           Run tests with coverage report"
 	@echo "  test-e2e       Run end-to-end service tests (needs GPU runner + external model endpoints)"
-	@echo "  check          Run lint, mypy, and test checks. Make sure this passes before submitting an MR."
+	@echo "  check          Run lint, mypy, and test checks. Make sure this passes before submitting a PR."
 	@echo "  run            Select and run a workspace script (optional ARGS=... for script argv)"
 	@echo "  build          Select and build a registered Docker image"
 	@echo "  clean          Remove build artifacts and .venv"

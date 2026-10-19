@@ -11,41 +11,21 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 from build import (
     DEFAULT_BUILD_PLATFORMS,
     BuildableImage,
     BuildOptions,
     _redact_build_args,
-    _registered_image_identifier,
     _registry_cache_ref,
     _select_image_with_text_prompt,
     _single_platform_arch,
     choose_image,
     discover_buildable_images,
     execute_build,
-    format_gitlab_ci_config,
     format_image_list,
-    format_test_results_pipeline_config,
     main,
     parse_args,
-    sanitize_docker_repo,
-    sanitize_docker_tag,
 )
-
-
-def _image(
-    tmp_path: Path, project_name: str, image_name: str, version: str, local_tag: str
-) -> BuildableImage:
-    """Minimal BuildableImage for tests that only care about the registered -t tag."""
-    return BuildableImage(
-        target=f"{project_name}:{image_name}",
-        project_name=project_name,
-        version=version,
-        package_dir=tmp_path / project_name.replace("-", "_"),
-        image_name=image_name,
-        command=f"docker buildx build -t {local_tag} .",
-    )
 
 
 @pytest.fixture
@@ -78,8 +58,6 @@ def test_parse_args_no_args() -> None:
     assert options == BuildOptions(
         target=None,
         list_images=False,
-        gitlab_ci=False,
-        gitlab_ci_test_results=False,
         output_format="text",
         tag=None,
         push=False,
@@ -97,8 +75,6 @@ def test_parse_args_list_json() -> None:
     assert options == BuildOptions(
         target=None,
         list_images=True,
-        gitlab_ci=False,
-        gitlab_ci_test_results=False,
         output_format="json",
         tag=None,
         push=False,
@@ -111,8 +87,6 @@ def test_parse_args_tag_and_push() -> None:
     assert options == BuildOptions(
         target="pkg-a:main",
         list_images=False,
-        gitlab_ci=False,
-        gitlab_ci_test_results=False,
         output_format="text",
         tag="registry/pkg-a:tag",
         push=True,
@@ -135,17 +109,6 @@ def test_parse_args_rejects_whitespace_platform_value() -> None:
         parse_args(["pkg-a:main", "--platform", "   "])
 
 
-def test_parse_args_rejects_platform_with_gitlab_ci() -> None:
-    with pytest.raises(ValueError, match="--platform"):
-        parse_args(["--gitlab-ci", "--platform", "linux/arm64"])
-
-
-def test_parse_args_rejects_explicit_default_platform_with_gitlab_ci() -> None:
-    # Passing the default value explicitly still counts as using the flag.
-    with pytest.raises(ValueError, match="--platform"):
-        parse_args(["--gitlab-ci", "--platform", DEFAULT_BUILD_PLATFORMS])
-
-
 def test_parse_args_rejects_empty_tag_value() -> None:
     with pytest.raises(ValueError, match="--tag"):
         parse_args(["pkg-a:main", "--tag", ""])
@@ -154,49 +117,6 @@ def test_parse_args_rejects_empty_tag_value() -> None:
 def test_parse_args_rejects_empty_tag_equals_value() -> None:
     with pytest.raises(ValueError, match="--tag"):
         parse_args(["pkg-a:main", "--tag="])
-
-
-def test_parse_args_gitlab_ci() -> None:
-    options = parse_args(["--gitlab-ci"])
-    assert options == BuildOptions(
-        target=None,
-        list_images=False,
-        gitlab_ci=True,
-        gitlab_ci_test_results=False,
-        output_format="text",
-        tag=None,
-        push=False,
-        platforms=DEFAULT_BUILD_PLATFORMS,
-    )
-
-
-def test_parse_args_gitlab_ci_test_results() -> None:
-    options = parse_args(["--gitlab-ci-test-results"])
-    assert options == BuildOptions(
-        target=None,
-        list_images=False,
-        gitlab_ci=False,
-        gitlab_ci_test_results=True,
-        output_format="text",
-        tag=None,
-        push=False,
-        platforms=DEFAULT_BUILD_PLATFORMS,
-    )
-
-
-def test_parse_args_rejects_gitlab_ci_with_gitlab_ci_test_results() -> None:
-    with pytest.raises(ValueError, match="--gitlab-ci-test-results"):
-        parse_args(["--gitlab-ci", "--gitlab-ci-test-results"])
-
-
-def test_parse_args_rejects_list_with_gitlab_ci_test_results() -> None:
-    with pytest.raises(ValueError, match="--gitlab-ci-test-results"):
-        parse_args(["--list", "--gitlab-ci-test-results"])
-
-
-def test_parse_args_rejects_list_with_gitlab_ci() -> None:
-    with pytest.raises(ValueError, match="--gitlab-ci"):
-        parse_args(["--list", "--gitlab-ci"])
 
 
 def test_parse_args_rejects_extra_args_without_separator() -> None:
@@ -221,19 +141,9 @@ def test_parse_args_rejects_explicit_format_matching_default() -> None:
         parse_args(["pkg-a:main", "--format", "text"])
 
 
-def test_parse_args_rejects_gitlab_ci_test_results_with_format() -> None:
-    with pytest.raises(ValueError, match="--format"):
-        parse_args(["--gitlab-ci-test-results", "--format", "text"])
-
-
 def test_parse_args_rejects_list_with_tag() -> None:
     with pytest.raises(ValueError, match="--tag"):
         parse_args(["--list", "--tag", "registry/pkg-a:tag"])
-
-
-def test_parse_args_rejects_gitlab_ci_with_target() -> None:
-    with pytest.raises(ValueError, match="--gitlab-ci"):
-        parse_args(["pkg-a:main", "--gitlab-ci"])
 
 
 # --- choose_image ---
@@ -586,381 +496,6 @@ def test_format_image_list_invalid_format_raises(two_images: list[BuildableImage
         format_image_list(two_images, "yaml")
 
 
-# --- Docker reference sanitizers ---
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("pkg-a", "pkg-a"),
-        ("Pkg.Name_1", "pkg.name_1"),
-        ("pkg+cuda/12", "pkg-cuda-12"),
-    ],
-)
-def test_sanitize_docker_repo(value: str, expected: str) -> None:
-    assert sanitize_docker_repo(value) == expected
-
-
-@pytest.mark.parametrize("value", ["", "+++", "___"])
-def test_sanitize_docker_repo_rejects_invalid_values(value: str) -> None:
-    with pytest.raises(ValueError, match="Docker repository"):
-        sanitize_docker_repo(value)
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("main", "main"),
-        ("1.2.3", "1.2.3"),
-        ("1.0.0+cu128", "1.0.0-cu128"),
-        ("cuda sm90", "cuda-sm90"),
-        (".rc1", "rc1"),
-    ],
-)
-def test_sanitize_docker_tag(value: str, expected: str) -> None:
-    assert sanitize_docker_tag(value) == expected
-
-
-@pytest.mark.parametrize("value", ["", "+++", "a" * 129])
-def test_sanitize_docker_tag_rejects_invalid_values(value: str) -> None:
-    with pytest.raises(ValueError, match="Docker tag"):
-        sanitize_docker_tag(value)
-
-
-# --- format_gitlab_ci_config ---
-
-
-def test_format_gitlab_ci_config_splits_each_image_per_arch(
-    two_images: list[BuildableImage],
-) -> None:
-    config = format_gitlab_ci_config(two_images)
-
-    # Each image gets an amd64 job, an arm64 job, and a merge job.
-    assert '"build-publish:pkg-a:main:amd64":' in config
-    assert '"build-publish:pkg-a:main:arm64":' in config
-    assert '"build-publish:pkg-a:main":' in config
-    assert '"build-publish:pkg-b:gpu:amd64":' in config
-    assert '"build-publish:pkg-b:gpu:arm64":' in config
-    assert '"build-publish:pkg-b:gpu":' in config
-    # Each arch job builds only its platform and pushes a per-arch -<arch> tag.
-    assert (
-        'python3 scripts/build.py "pkg-a:main" --tag "${ARCH_REF}" '
-        "--platform linux/amd64 --push" in config
-    )
-    assert (
-        'python3 scripts/build.py "pkg-a:main" --tag "${ARCH_REF}" '
-        "--platform linux/arm64 --push" in config
-    )
-    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/pkg-a"' in config
-    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/pkg-b-gpu"' in config
-    assert 'IMAGE_TAG="main-1.2.3-${CI_COMMIT_SHORT_SHA}.${LABEL}"' in config
-    assert 'IMAGE_TAG="gpu-4.5.6-${CI_COMMIT_SHORT_SHA}.${LABEL}"' in config
-
-
-def test_format_gitlab_ci_config_merges_arch_tags_into_manifest(
-    two_images: list[BuildableImage],
-) -> None:
-    config = format_gitlab_ci_config(two_images)
-
-    # The merge job stitches both arch tags into the single final manifest tag.
-    assert (
-        'docker buildx imagetools create -t "${IMAGE_REF}" '
-        '"${IMAGE_REF}-amd64" "${IMAGE_REF}-arm64"' in config
-    )
-    assert (
-        '  needs:\n    - "build-publish:pkg-a:main:amd64"\n'
-        '    - "build-publish:pkg-a:main:arm64"' in config
-    )
-
-
-def test_format_gitlab_ci_config_routes_arm_to_native_pool(
-    two_images: list[BuildableImage],
-) -> None:
-    config = format_gitlab_ci_config(two_images)
-
-    # arm64 builds go native to the arm-sdg pool; amd64 stays on sdg.
-    assert "    - arm-sdg\n" in config
-    assert "  resource_group: docker-build-amd64" in config
-    assert "  resource_group: docker-build-arm64" in config
-    # No QEMU emulation now that both arches build natively.
-    assert "tonistiigi/binfmt" not in config
-    assert "--install arm64" not in config
-
-
-def test_format_gitlab_ci_config_sanitizes_image_ref_parts(tmp_path: Path) -> None:
-    image = BuildableImage(
-        target="Pkg+Name:gpu+sm90",
-        project_name="Pkg+Name",
-        version="1.0.0+cu128",
-        package_dir=tmp_path / "packages" / "pkg",
-        image_name="gpu+sm90",
-        command="docker build -t cdf-pkg .",
-    )
-
-    config = format_gitlab_ci_config([image])
-
-    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/cdf-pkg"' in config
-    assert 'IMAGE_TAG="gpu-sm90-1.0.0-cu128-${CI_COMMIT_SHORT_SHA}.${LABEL}"' in config
-
-
-def test_format_gitlab_ci_config_uses_registered_tag_as_repository(tmp_path: Path) -> None:
-    image = BuildableImage(
-        target="captioning-service:main",
-        project_name="captioning-service",
-        version="0.1.0",
-        package_dir=tmp_path / "services" / "captioning_service",
-        image_name="main",
-        command="docker build -t cdf-captioning-service .",
-    )
-
-    config = format_gitlab_ci_config([image])
-
-    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/cdf-captioning-service"' in config
-
-
-def test_format_gitlab_ci_config_uses_repository_from_local_tag(tmp_path: Path) -> None:
-    image = BuildableImage(
-        target="upa-media-base:ubuntu-input-only",
-        project_name="upa-media-base",
-        version="0.1.0",
-        package_dir=tmp_path / "docker" / "media-base",
-        image_name="ubuntu-input-only",
-        command="docker buildx build -t upa-media-base:ubuntu-input-only .",
-    )
-
-    config = format_gitlab_ci_config([image])
-
-    assert 'IMAGE_REPOSITORY="$UPA_IMAGE_REGISTRY_PREFIX/upa-media-base"' in config
-
-
-def test_format_gitlab_ci_config_rejects_qualified_registered_tag(tmp_path: Path) -> None:
-    image = BuildableImage(
-        target="pkg-a:main",
-        project_name="pkg-a",
-        version="1.2.3",
-        package_dir=tmp_path / "packages" / "pkg-a",
-        image_name="main",
-        command="docker build -t registry.example/pkg-a:latest .",
-    )
-
-    with pytest.raises(ValueError, match="unqualified Docker repository"):
-        format_gitlab_ci_config([image])
-
-
-def test_format_gitlab_ci_config_uses_mr_label_inputs(two_images: list[BuildableImage]) -> None:
-    config = format_gitlab_ci_config(two_images)
-
-    assert 'if [ "$UPA_PARENT_PIPELINE_SOURCE" = "merge_request_event" ]; then' in config
-    assert 'LABEL="mr$UPA_PARENT_MERGE_REQUEST_IID"' in config
-    assert 'LABEL="main"' in config
-
-
-def test_format_gitlab_ci_config_allows_parent_child_pipeline_source(
-    two_images: list[BuildableImage],
-) -> None:
-    config = format_gitlab_ci_config(two_images)
-
-    # amd64 + arm64 + merge + push-test-results = four jobs per image, each rule-gated,
-    # plus the one shared compute-ngc-label job.
-    assert config.count('if: $CI_PIPELINE_SOURCE == "parent_pipeline"') == len(two_images) * 4 + 1
-
-
-def test_format_gitlab_ci_config_targets_sdg_runners(
-    two_images: list[BuildableImage],
-) -> None:
-    # Pin the child pipeline to the SDG-RTX6000-ADA runner pool (tag `sdg`).
-    # See horde-ci-01 lease expiry / runner migration.
-    config = format_gitlab_ci_config(two_images)
-
-    assert "default:\n  interruptible: true\n  tags:\n    - sdg\n" in config
-
-
-def test_format_gitlab_ci_config_sets_up_buildx_builder(
-    two_images: list[BuildableImage],
-) -> None:
-    config = format_gitlab_ci_config(two_images)
-
-    # The docker-container driver is still needed for registry cache export.
-    assert "docker buildx create --name upa-builder --driver docker-container --use" in config
-    assert "docker buildx inspect --bootstrap" in config
-
-
-def _load_ci_jobs(images: list[BuildableImage]) -> tuple[dict, dict]:
-    """Parse the generated child pipeline and split the default block from the jobs."""
-
-    doc = yaml.safe_load(format_gitlab_ci_config(images))
-    assert isinstance(doc, dict)
-    jobs = {key: value for key, value in doc.items() if key not in {"include", "stages", "default"}}
-    return doc, jobs
-
-
-def test_generated_pipeline_parses_with_four_distinct_jobs_per_image(
-    two_images: list[BuildableImage],
-) -> None:
-    doc, jobs = _load_ci_jobs(two_images)
-
-    # Parsing as YAML (not substring matching) catches indentation that would
-    # merge two jobs or misplace a key under the wrong block.
-    assert doc["default"] == {"interruptible": True, "tags": ["sdg"]}
-    # amd64 + arm64 + merge + push-test-results per image, plus the one shared
-    # compute-ngc-label job.
-    assert len(jobs) == len(two_images) * 4 + 1
-    assert "compute-ngc-label" in jobs
-
-    for image in two_images:
-        amd = jobs[f"build-publish:{image.target}:amd64"]
-        arm = jobs[f"build-publish:{image.target}:arm64"]
-        merge = jobs[f"build-publish:{image.target}"]
-
-        assert amd["tags"] == ["sdg"]
-        assert arm["tags"] == ["arm-sdg"]
-        assert amd["resource_group"] == "docker-build-amd64"
-        assert arm["resource_group"] == "docker-build-arm64"
-        # The merge job just stitches manifests, so it takes no build slot.
-        assert "resource_group" not in merge
-        assert merge["needs"] == [
-            f"build-publish:{image.target}:amd64",
-            f"build-publish:{image.target}:arm64",
-        ]
-
-        push_results = jobs[f"push-test-results:{image.target}"]
-        assert push_results["extends"] == ".push_junit_results_to_ngc"
-        # Must wait on the image's own merge job — not just the parent unit-test
-        # artifact — so results are never pushed for a version whose image build
-        # is still in flight or later fails.
-        assert push_results["needs"] == [
-            {"job": "compute-ngc-label", "artifacts": True},
-            {"pipeline": "$UPA_PARENT_PIPELINE_ID", "job": "unit-test", "artifacts": True},
-            f"build-publish:{image.target}",
-        ]
-        image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
-        image_version = sanitize_docker_tag(image.version)
-        assert push_results["variables"]["NGC_VERSION_TAG"] == (
-            f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.${{LABEL}}"
-        )
-
-
-def test_generated_pipeline_wires_base_needs_as_parsed_yaml(tmp_path: Path) -> None:
-    _, jobs = _load_ci_jobs(_base_and_dependent(tmp_path))
-
-    base = "build-publish:upa-media-base:ubuntu-vp9"
-    service = "build-publish:captioning-service:main"
-
-    # Both service arch jobs wait on the base merge job, not its arch legs, so
-    # BUILDER_BASE_IMAGE resolves to a manifest list.
-    assert jobs[f"{service}:amd64"]["needs"] == [base]
-    assert jobs[f"{service}:arm64"]["needs"] == [base]
-    assert jobs[base]["needs"] == [f"{base}:amd64", f"{base}:arm64"]
-    # The base arch jobs sit at the root of the graph.
-    assert "needs" not in jobs[f"{base}:amd64"]
-    assert "needs" not in jobs[f"{base}:arm64"]
-
-
-# --- format_test_results_pipeline_config ---
-
-
-def test_format_test_results_pipeline_config_creates_one_job_per_image(
-    two_images: list[BuildableImage],
-) -> None:
-    config = format_test_results_pipeline_config(two_images)
-
-    assert '"push-test-results:pkg-a:main":' in config
-    assert '"push-test-results:pkg-b:gpu":' in config
-    assert 'NGC_VERSION_TAG: "pkg-a-1.2.3-${CI_COMMIT_SHORT_SHA}.main"' in config
-    assert 'NGC_VERSION_TAG: "pkg-b-gpu-4.5.6-${CI_COMMIT_SHORT_SHA}.main"' in config
-
-
-def test_format_test_results_pipeline_config_targets_sdg_runners(
-    two_images: list[BuildableImage],
-) -> None:
-    config = format_test_results_pipeline_config(two_images)
-
-    assert "default:\n  interruptible: true\n  tags:\n    - sdg\n" in config
-
-
-def test_format_test_results_pipeline_config_never_depends_on_a_container_build(
-    two_images: list[BuildableImage],
-) -> None:
-    # The whole point of this pipeline is to push test results without waiting
-    # on (or triggering) any image build/publish job.
-    config = format_test_results_pipeline_config(two_images)
-
-    assert "build-publish" not in config
-    assert "compute-ngc-label" not in config
-
-
-def test_format_test_results_pipeline_config_parses_with_expected_jobs(
-    two_images: list[BuildableImage],
-) -> None:
-    doc = yaml.safe_load(format_test_results_pipeline_config(two_images))
-    assert isinstance(doc, dict)
-    jobs = {key: value for key, value in doc.items() if key not in {"include", "stages", "default"}}
-
-    assert doc["default"] == {"interruptible": True, "tags": ["sdg"]}
-    assert doc["stages"] == ["test-results"]
-    assert len(jobs) == len(two_images)
-
-    for image in two_images:
-        job = jobs[f"push-test-results:{image.target}"]
-        assert job["extends"] == ".push_junit_results_to_ngc"
-        assert job["stage"] == "test-results"
-        # Only needs the parent pipeline's unit-test artifact — no per-image
-        # image-build dependency, so this runs on every merge to main.
-        assert job["needs"] == [
-            {"pipeline": "$UPA_PARENT_PIPELINE_ID", "job": "unit-test", "artifacts": True},
-        ]
-        assert job["rules"] == [
-            {"if": '$CI_PIPELINE_SOURCE == "parent_pipeline"', "when": "on_success"}
-        ]
-        image_identifier = sanitize_docker_tag(_registered_image_identifier(image))
-        image_version = sanitize_docker_tag(image.version)
-        assert job["variables"]["NGC_VERSION_TAG"] == (
-            f"{image_identifier}-{image_version}-${{CI_COMMIT_SHORT_SHA}}.main"
-        )
-
-
-def test_format_test_results_pipeline_config_disambiguates_shared_repository(
-    tmp_path: Path,
-) -> None:
-    shared_repo_images = [
-        _image(
-            tmp_path,
-            "upa-media-base",
-            "ubuntu-input-only",
-            "1.1.0",
-            "upa-media-base:ubuntu-input-only",
-        ),
-        _image(tmp_path, "upa-media-base", "ubuntu-vp9", "1.1.0", "upa-media-base:ubuntu-vp9"),
-    ]
-
-    config = format_test_results_pipeline_config(shared_repo_images)
-
-    assert (
-        'NGC_VERSION_TAG: "upa-media-base_cubuntu-input-only-1.1.0-${CI_COMMIT_SHORT_SHA}.main"'
-        in config
-    )
-    assert (
-        'NGC_VERSION_TAG: "upa-media-base_cubuntu-vp9-1.1.0-${CI_COMMIT_SHORT_SHA}.main"' in config
-    )
-
-
-def test_registered_image_identifier_preserves_repository_tag_boundary(tmp_path: Path) -> None:
-    identifiers = {
-        _registered_image_identifier(_image(tmp_path, "one", "main", "1.0.0", local_tag))
-        for local_tag in ("foo-bar:baz", "foo:bar-baz", "foo_cbar-baz")
-    }
-
-    assert identifiers == {"foo-bar_cbaz", "foo_cbar-baz", "foo__cbar-baz"}
-
-
-def test_registered_images_have_unique_test_result_tags() -> None:
-    tags = [
-        (_registered_image_identifier(image), sanitize_docker_tag(image.version))
-        for image in discover_buildable_images()
-    ]
-    assert len(tags) == len(set(tags))
-
-
 # --- execute_build ---
 
 
@@ -1251,9 +786,9 @@ def test_parse_args_rejects_build_arg_with_whitespace_key() -> None:
         parse_args(["pkg-a:main", "--build-arg", "   =value"])
 
 
-def test_parse_args_rejects_build_arg_with_gitlab_ci() -> None:
+def test_parse_args_rejects_build_arg_with_list() -> None:
     with pytest.raises(ValueError, match="--build-arg"):
-        parse_args(["--gitlab-ci", "--build-arg", "A=B"])
+        parse_args(["--list", "--build-arg", "A=B"])
 
 
 def test_execute_build_appends_build_args(tmp_path: Path) -> None:
@@ -1265,60 +800,6 @@ def test_execute_build_appends_build_args(tmp_path: Path) -> None:
 
     assert "--build-arg" in command
     assert command[command.index("--build-arg") + 1] == "BUILDER_BASE_IMAGE=registry/base:tag"
-
-
-def _base_and_dependent(tmp_path: Path) -> list[BuildableImage]:
-    base = BuildableImage(
-        target="upa-media-base:ubuntu-vp9",
-        project_name="upa-media-base",
-        version="0.1.0",
-        package_dir=tmp_path / "docker" / "media-base",
-        image_name="ubuntu-vp9",
-        command="docker buildx build -t base -f docker/media-base/Dockerfile .",
-    )
-    service = BuildableImage(
-        target="captioning-service:main",
-        project_name="captioning-service",
-        version="1.0.0",
-        package_dir=tmp_path / "services" / "captioning_service",
-        image_name="main",
-        command="docker buildx build -t captioning -f services/captioning/docker/Dockerfile .",
-        base_target="upa-media-base:ubuntu-vp9",
-    )
-    return [service, base]
-
-
-def test_gitlab_ci_config_wires_base_dependency() -> None:
-    config = format_gitlab_ci_config(_base_and_dependent(Path("/tmp")))
-
-    # The dependent service waits for its base and receives the pushed base ref.
-    assert '  needs:\n    - "build-publish:upa-media-base:ubuntu-vp9"' in config
-    assert (
-        'BUILDER_BASE_IMAGE="$UPA_IMAGE_REGISTRY_PREFIX/upa-media-base:'
-        'ubuntu-vp9-0.1.0-${CI_COMMIT_SHORT_SHA}.${LABEL}"' in config
-    )
-    assert '--build-arg "BUILDER_BASE_IMAGE=${BUILDER_BASE_IMAGE}"' in config
-
-
-def test_gitlab_ci_config_gives_base_jobs_a_longer_timeout() -> None:
-    config = format_gitlab_ci_config(_base_and_dependent(Path("/tmp")))
-    assert "  timeout: 5 hours" in config
-    # The consuming service keeps the standard timeout.
-    assert "  timeout: 2 hours 30 minutes" in config
-
-
-def test_gitlab_ci_config_rejects_unknown_base() -> None:
-    orphan = BuildableImage(
-        target="svc:main",
-        project_name="svc",
-        version="1.0.0",
-        package_dir=Path("/tmp/svc"),
-        image_name="main",
-        command="docker buildx build -t svc -f Dockerfile .",
-        base_target="upa-media-base:missing",
-    )
-    with pytest.raises(ValueError, match="unknown base"):
-        format_gitlab_ci_config([orphan])
 
 
 # --- main ---
@@ -1343,16 +824,6 @@ def test_main_list_json_returns_zero(two_images: list[BuildableImage], tmp_path:
 
     payload = json.loads(mock_print.call_args[0][0])
     assert payload[0]["target"] == "pkg-a:main"
-
-
-def test_main_gitlab_ci_returns_zero(two_images: list[BuildableImage]) -> None:
-    with (
-        patch("build.discover_buildable_images", return_value=two_images),
-        patch("builtins.print") as mock_print,
-    ):
-        assert main(["--gitlab-ci"]) == 0
-
-    assert "build-publish:pkg-a:main" in mock_print.call_args[0][0]
 
 
 def test_main_passes_tag_and_push_to_execute_build(two_images: list[BuildableImage]) -> None:
