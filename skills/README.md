@@ -28,6 +28,7 @@ directory so local agents load the same pack.
 | [event-and-person-attribute-search](cdf-auto-labeling/references/event-and-person-attribute-search.md) | Choosing, dry-running, or validating one of the four EPAS/PAS cookbooks |
 | [event-verification-reasoning](cdf-auto-labeling/references/event-verification-reasoning.md) | Operating the video PAS + event-verification reasoning cookbook |
 | [workflow-runner-debugging](cdf-auto-labeling/references/workflow-runner-debugging.md) | Debugging an already-integrated workflow |
+| [ngc-containers](cdf-auto-labeling/references/ngc-containers.md) | Pulling prebuilt stage images from NGC and logging in to `nvcr.io` |
 | [cookbook-authoring](cdf-auto-labeling/references/cookbook-authoring.md) | Creating, reviewing, or adapting a cookbook |
 | [prompt-authoring](cdf-auto-labeling/references/prompt-authoring.md) | Writing or adapting VLM/LLM prompts |
 | [workflow-stage-integration](cdf-auto-labeling/references/workflow-stage-integration.md) | Implementing or reviewing a new stage or Dockerized service |

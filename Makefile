@@ -1,11 +1,27 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-.PHONY: help sync lint lint-check mypy test test-e2e check run build clean
+.PHONY: help sync lint lint-check mypy test test-e2e check run build pull clean
 
 SCRIPT ?=
 ARGS ?=
 IMAGE ?=
 PYTHON ?= python3
+CONTAINER_RUNTIME ?= docker
+NGC_REGISTRY ?= nvcr.io/nvidia
+NGC_TAG ?= 1.1.0
+NGC_IMAGES ?= \
+	cdf-workflow-runner \
+	cdf-super-resolution-service \
+	cdf-detection-and-tracking-rfdetr-service \
+	cdf-detection-and-tracking-sam3-service \
+	cdf-referring-expressions-service \
+	cdf-captioning-service \
+	cdf-grounding-2d-service \
+	cdf-grounding-2d-sam3-service \
+	cdf-visual-qa-service \
+	cdf-reasoning-service \
+	cdf-training-export-service \
+	cdf-event-and-person-attribute-search-service
 GIT ?= git
 UV_CACHE_DIR ?= $(CURDIR)/.uv-cache
 PYTEST_DISABLE_PLUGIN_AUTOLOAD ?= 1
@@ -37,6 +53,8 @@ help:
 	@echo "  check          Run lint, mypy, and test checks. Make sure this passes before submitting a PR."
 	@echo "  run            Select and run a workspace script (optional ARGS=... for script argv)"
 	@echo "  build          Select and build a registered Docker image"
+	@echo "  pull           Pull prebuilt stage images from NGC and tag them with local names"
+	@echo "                 (optional NGC_IMAGES=\"cdf-captioning-service ...\" NGC_TAG=... CONTAINER_RUNTIME=podman)"
 	@echo "  clean          Remove build artifacts and .venv"
 
 sync:
@@ -70,6 +88,16 @@ run: sync
 
 build:
 	$(PYTHON) scripts/build.py $(IMAGE)
+
+# The workflow runner launches stages by bare image name (e.g. cdf-captioning-service)
+# and never pulls, so each pulled image is also tagged with that local name.
+pull:
+	@for image in $(NGC_IMAGES); do \
+		ref="$(NGC_REGISTRY)/$$image:$(NGC_TAG)"; \
+		echo "Pulling $$ref"; \
+		$(CONTAINER_RUNTIME) pull "$$ref" || exit 1; \
+		$(CONTAINER_RUNTIME) tag "$$ref" "$$image" || exit 1; \
+	done
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + || true

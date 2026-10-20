@@ -1,5 +1,5 @@
 ## Description: <br>
-Use when a user needs to get started with CDF Auto-Labeling, plan a scenario, run or debug a shipped cookbook, author prompts or cookbooks, migrate a pipeline, or configure a stage. <br>
+Use when a user needs to get started with CDF Auto-Labeling, plan a scenario, run or debug a shipped cookbook, author prompts or cookbooks, migrate a pipeline, configure a stage, or pull the prebuilt stage containers from NGC (nvcr.io). <br>
 
 This skill is ready for commercial/non-commercial use. <br>
 
@@ -9,7 +9,7 @@ NVIDIA <br>
 ### License/Terms of Use: <br>
 Apache 2.0 <br>
 ## Use Case: <br>
-Developers and engineers use this skill to plan, configure, run, and debug CDF Auto-Labeling cookbooks that turn raw image and video datasets into annotation artifacts and training-ready outputs. <br>
+Developers and engineers use this skill to plan, configure, run, and debug CDF Auto-Labeling cookbooks that turn raw image and video datasets into annotation artifacts and training-ready outputs, including pulling the prebuilt stage containers from NGC. <br>
 
 ### Deployment Geography for Use: <br>
 Global <br>
@@ -35,6 +35,7 @@ Mitigation: Review and scan skill before deployment. <br>
 - [Event Verification Reasoning](references/event-verification-reasoning.md) <br>
 - [Workflow Runner Debugging](references/workflow-runner-debugging.md) <br>
 - [Workflow Stage Integration](references/workflow-stage-integration.md) <br>
+- [NGC Containers](references/ngc-containers.md) <br>
 - [Stage References](references/stages/) <br>
 
 
@@ -51,7 +52,7 @@ Mitigation: Review and scan skill before deployment. <br>
 
 
 ## Evaluation Tasks: <br>
-Evaluated against 3 tasks (3 positive), 1 attempt per task, each in an isolated k8s-sandbox pod. <br>
+Evaluated against 4 tasks (4 positive), 1 attempt per task, each in an isolated k8s-sandbox pod. <br>
 
 ## Evaluation Metrics Used: <br>
 Reported benchmark dimensions: <br>
@@ -75,12 +76,12 @@ Underlying evaluation signals used in this run: <br>
 ## Evaluation Results: <br>
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 93.3% | 96.0% |
-| Security | 100.0% → 100.0% (±0.0 points) | 100.0% → 100.0% (±0.0 points) |
-| Correctness | 13.3% → 100.0% (+86.7 points) | 33.3% → 100.0% (+66.7 points) |
-| Discoverability | 95.3% | 86.7% |
-| Effectiveness | 32.5% → 83.3% (+50.8 points) | 28.3% → 97.5% (+69.2 points) |
-| Efficiency | 88.0% | 95.6% |
+| Overall | 96.1% | 97.1% |
+| Security | 100.0% → 100.0% (±0.0 points) | 62.5% → 100.0% (+37.5 points) |
+| Correctness | 25.0% → 100.0% (+75.0 points) | 35.0% → 100.0% (+65.0 points) |
+| Discoverability | 96.3% | 91.3% |
+| Effectiveness | 29.6% → 95.6% (+66.0 points) | 25.0% → 96.3% (+71.3 points) |
+| Efficiency | 88.4% | 97.7% |
 
 ## Skill Version(s): <br>
 1.1.0 (source: frontmatter, pyproject.toml, changelog) <br>

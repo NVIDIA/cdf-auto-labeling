@@ -35,5 +35,19 @@
       "Response confirms environment prerequisites before running.",
       "Response advises against customizing a cookbook before the shipped example runs clean."
     ]
+  },
+  {
+    "id": "4",
+    "question": "I don't want to build all the stage containers myself. Where do I get the Auto-Labeling images, and do I need to log in to nvcr.io?",
+    "expected_skill": "cdf-auto-labeling",
+    "ground_truth": "Response uses the auto-labeling skill and routes to the ngc-containers reference. It explains that the stage images are public in the NGC Catalog under nvcr.io/nvidia/cdf-* with the 1.1.0 release tag, that anonymous pulls work so docker login nvcr.io is optional, and that an authenticated login uses the literal username $oauthtoken with an NGC personal API key passed through --password-stdin from an environment variable. It recommends dry-running the cookbook to find the images the run needs, then running make pull with NGC_IMAGES limited to those images so each image is tagged with the local cdf-* name the workflow runner expects, and verifying with docker image ls and another dry run.",
+    "expected_behavior": [
+      "Response triggers the auto-labeling skill and uses the ngc-containers reference.",
+      "Response points to nvcr.io/nvidia/cdf-* images and the NGC Catalog pages.",
+      "Response states that login is optional because the images allow anonymous pulls.",
+      "Response shows docker login nvcr.io with username $oauthtoken and --password-stdin, reading the key from an environment variable.",
+      "Response recommends make pull (optionally with NGC_IMAGES) so images get the local names the workflow runner uses.",
+      "Response never asks the user to paste an API key into chat or commit it to a file."
+    ]
   }
 ]

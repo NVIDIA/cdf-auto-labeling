@@ -20,6 +20,7 @@ first, then the matching page.
 
 - [workflow-runner-debugging.md](workflow-runner-debugging.md)
 - [workflow-stage-integration.md](workflow-stage-integration.md)
+- [ngc-containers.md](ngc-containers.md)
 
 ## Stages
 

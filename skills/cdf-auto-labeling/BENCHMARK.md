@@ -9,11 +9,11 @@ Recommended for publication based on the completed evaluation evidence in this r
 ## Evaluation Metadata
 
 - Skill: `cdf-auto-labeling`
-- Evaluation date: 2026-10-14
+- Evaluation date: 2026-10-20
 - Evaluator version: `1.5.6`
 - Agents: Claude Code (`aws/anthropic/bedrock-claude-opus-4-8`), Codex (`openai/openai/gpt-5.5`)
-- Tasks: 3 evaluation tasks (3 positive)
-- Dataset digest: `sha256:cee2d6993e9cd3d40859e230587a17331d163434a030948f5867c42b146811d4` (skill-evaluator-dataset-snapshot/1)
+- Tasks: 4 evaluation tasks (4 positive)
+- Dataset digest: `sha256:2c6d2a30a41329a86f39d94800eb60f640cf80f7382ff41245aa5d6301cf729c` (skill-evaluator-dataset-snapshot/1)
 - Attempts per task: 1
 - Environment: `k8s-sandbox`
 - Tier 2 evidence: required for publication
@@ -35,12 +35,12 @@ The three-tier evaluation checks whether the skill:
 
 | Measure | Claude Code (Baseline → Skill Uplift) | Codex (Baseline → Skill Uplift) |
 |---|---:|---:|
-| Overall | 93.3% — baseline ran, but no comparable score was available; uplift unavailable | 96.0% — baseline ran, but no comparable score was available; uplift unavailable |
-| Security | 100.0% → 100.0% (±0.0 points) | 100.0% → 100.0% (±0.0 points) |
-| Correctness | 13.3% → 100.0% (+86.7 points) | 33.3% → 100.0% (+66.7 points) |
-| Discoverability | 95.3% — baseline ran, but no comparable score was available; uplift unavailable | 86.7% — baseline ran, but no comparable score was available; uplift unavailable |
-| Effectiveness | 32.5% → 83.3% (+50.8 points) | 28.3% → 97.5% (+69.2 points) |
-| Efficiency | 88.0% — baseline ran, but no comparable score was available; uplift unavailable | 95.6% — baseline ran, but no comparable score was available; uplift unavailable |
+| Overall | 96.1% — baseline ran, but no comparable score was available; uplift unavailable | 97.1% — baseline ran, but no comparable score was available; uplift unavailable |
+| Security | 100.0% → 100.0% (±0.0 points) | 62.5% → 100.0% (+37.5 points) |
+| Correctness | 25.0% → 100.0% (+75.0 points) | 35.0% → 100.0% (+65.0 points) |
+| Discoverability | 96.3% — baseline ran, but no comparable score was available; uplift unavailable | 91.3% — baseline ran, but no comparable score was available; uplift unavailable |
+| Effectiveness | 29.6% → 95.6% (+66.0 points) | 25.0% → 96.3% (+71.3 points) |
+| Efficiency | 88.4% — baseline ran, but no comparable score was available; uplift unavailable | 97.7% — baseline ran, but no comparable score was available; uplift unavailable |
 
 **How to read this table:** baseline is the same task attempted without the target skill. Scores are rounded to one decimal; threshold-adjacent values use additional precision so their displayed band matches the verdict. Uplift is derived from those displayed scores and shown in percentage points.
 
@@ -52,15 +52,17 @@ Actual Tier 3 execution usage is reported for every observed agent/case pair and
 
 | Agent | Dataset case | With skill | Without skill | Delta | Change | Coverage |
 |---|---|---:|---:|---:|---:|---|
-| claude-code | All cases | 601,389 | 581,549 | +19,840 | +3.41% | skill 3/3; base 3/3 |
-| claude-code | 1 | 199,707 | 215,772 | -16,065 | -7.45% | skill 1/1; base 1/1 |
-| claude-code | 2 | 161,817 | 181,972 | -20,155 | -11.08% | skill 1/1; base 1/1 |
-| claude-code | 3 | 239,865 | 183,805 | +56,060 | +30.50% | skill 1/1; base 1/1 |
-| codex | All cases | 337,572 | 209,578 | +127,994 | +61.07% | skill 3/3; base 3/3 |
-| codex | 1 | 160,989 | 84,014 | +76,975 | +91.62% | skill 1/1; base 1/1 |
-| codex | 2 | 28,978 | 70,477 | -41,499 | -58.88% | skill 1/1; base 1/1 |
-| codex | 3 | 147,605 | 55,087 | +92,518 | +167.95% | skill 1/1; base 1/1 |
-| ALL AGENTS | Dataset aggregate | 938,961 | 791,127 | +147,834 | +18.69% | skill 6/6; base 6/6 |
+| claude-code | All cases | 585,270 | 674,144 | -88,874 | -13.18% | skill 4/4; base 4/4 |
+| claude-code | 1 | 162,813 | 185,163 | -22,350 | -12.07% | skill 1/1; base 1/1 |
+| claude-code | 2 | 163,551 | 214,272 | -50,721 | -23.67% | skill 1/1; base 1/1 |
+| claude-code | 3 | 162,542 | 152,608 | +9,934 | +6.51% | skill 1/1; base 1/1 |
+| claude-code | 4 | 96,364 | 122,101 | -25,737 | -21.08% | skill 1/1; base 1/1 |
+| codex | All cases | 304,518 | 558,053 | -253,535 | -45.43% | skill 4/4; base 4/4 |
+| codex | 1 | 86,351 | 42,081 | +44,270 | +105.20% | skill 1/1; base 1/1 |
+| codex | 2 | 29,011 | 217,202 | -188,191 | -86.64% | skill 1/1; base 1/1 |
+| codex | 3 | 141,216 | 128,791 | +12,425 | +9.65% | skill 1/1; base 1/1 |
+| codex | 4 | 47,940 | 169,979 | -122,039 | -71.80% | skill 1/1; base 1/1 |
+| ALL AGENTS | Dataset aggregate | 889,788 | 1,232,197 | -342,409 | -27.79% | skill 8/8; base 8/8 |
 
 Prompt tokens include cached reads, so total tokens are `prompt + completion` (cached is not added twice). The Efficiency score uses `(prompt - cached) + completion`. N/A means the relevant trajectory counters were not available; coverage is never estimated.
 
@@ -68,21 +70,21 @@ Prompt tokens include cached reads, so total tokens are `prompt + completion` (c
 
 | Tier | Purpose | Status | Evidence |
 |---|---|---|---|
-| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 11 validator(s); 22 finding(s) |
-| Tier 2 | Semantic deduplication | **PASSED WITH OBSERVATIONS** | 2 validator(s); 1 finding(s) |
-| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 3 task(s) |
+| Tier 1 | Static validation | **PASSED WITH OBSERVATIONS** | 11 validator(s); 17 finding(s) |
+| Tier 2 | Semantic deduplication | **PASSED** | 2 validator(s); 0 finding(s) |
+| Tier 3 | Live agent evaluation | **PASS** | 2 agent(s); 4 task(s) |
 
 ## Findings and Observations
 
 <details>
 <summary>Show detailed findings and successful checks</summary>
 
-- **MEDIUM** CONTENT_DEDUP/advisory_validator_failure: Context Deduplication reported a non-blocking validation failure without detailed findings.
-- **MEDIUM** QUALITY/quality_efficiency: Deeply nested references in README.md (`skills/cdf-auto-labeling/SKILL.md`)
+- **MEDIUM** QUALITY/quality_efficiency: Deeply nested references in cookbook-authoring.md (`skills/cdf-auto-labeling/SKILL.md`)
 - **MEDIUM** SCHEMA/frontmatter_field_placement: Root field 'author' is ignored; use 'metadata.author' (`skills/cdf-auto-labeling/SKILL.md`)
 - **MEDIUM** SCHEMA/frontmatter_field_placement: Root field 'version' is ignored; use 'metadata.version' (`skills/cdf-auto-labeling/SKILL.md`)
-- **MEDIUM** SECURITY/Skill Enumeration (AS3): Agent Snooping: skills/cdf-auto-labeling/SKILL.md (`BENCHMARK.md:80`)
-- 18 additional finding(s) are available in the full evaluation artifacts.
+- **MEDIUM** SECURITY/Skill Enumeration (AS3): Agent Snooping: skills/cdf-auto-labeling/SKILL.md (`BENCHMARK.md:81`)
+- **MEDIUM** SECURITY/Skill Enumeration (AS3): Agent Snooping: skills/cdf-auto-labeling/SKILL.md (`BENCHMARK.md:82`)
+- 12 additional finding(s) are available in the full evaluation artifacts.
 
 </details>
 

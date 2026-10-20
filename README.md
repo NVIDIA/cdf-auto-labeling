@@ -191,6 +191,17 @@ for the complete target list.
 `make build` discovers them from `[tool.build.images]`, and registered build
 commands run from the repository root.
 
+To skip the build, pull the prebuilt images from NGC. `make pull` tags each
+one with the local name the workflow runner expects:
+
+```bash
+make pull
+make pull NGC_IMAGES="cdf-captioning-service cdf-visual-qa-service"
+```
+
+See [NGC Containers](docs/user-guide/ngc-containers.md) for catalog links,
+`nvcr.io` login, and per-stage image overrides.
+
 ## Repository Layout
 
 ```text

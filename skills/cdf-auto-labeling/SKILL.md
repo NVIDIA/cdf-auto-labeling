@@ -3,7 +3,8 @@ name: cdf-auto-labeling
 description: >-
   Use when a user needs to get started with CDF Auto-Labeling, plan a
   scenario, run or debug a shipped cookbook, author prompts or cookbooks,
-  migrate a pipeline, or configure a stage. Confirm critical inputs (data
+  migrate a pipeline, configure a stage, or pull the prebuilt stage containers
+  from NGC (nvcr.io). Confirm critical inputs (data
   path, output path, endpoints) and ask when any are missing. This is a
   router: read the matching reference instead of inventing a workflow.
 license: Apache-2.0
@@ -37,6 +38,7 @@ references instead of duplicating their detail.
 | Run or choose an EPAS / PAS cookbook | [`references/event-and-person-attribute-search.md`](references/event-and-person-attribute-search.md) |
 | Run event-verification reasoning | [`references/event-verification-reasoning.md`](references/event-verification-reasoning.md) |
 | Debug an already-integrated workflow | [`references/workflow-runner-debugging.md`](references/workflow-runner-debugging.md) |
+| Pull prebuilt stage images from NGC, log in to `nvcr.io`, or fix a missing `cdf-*` image | [`references/ngc-containers.md`](references/ngc-containers.md) |
 | Implement or review a new stage or Dockerized service | [`references/workflow-stage-integration.md`](references/workflow-stage-integration.md) |
 | Configure or debug one production stage | The matching file under [`references/stages/`](references/stages/) |
 
@@ -61,6 +63,9 @@ Stage references: [super-resolution](references/stages/super-resolution.md),
 2. Verify the environment: repository cloned, `make` targets available, the
    model cache path exists, the VLM/LLM endpoints are reachable, and a GPU is
    available. State any missing prerequisite as a blocker instead of assuming it.
+   If the stage images are not present locally, offer to pull the prebuilt
+   images from NGC with `make pull` instead of building them. Use
+   [ngc-containers](references/ngc-containers.md).
 3. Run a shipped example first to confirm the stack works end to end before
    customizing. Pick the closest operator pipeline - video data augmentation,
    event-and-person-attribute-search, or event-verification-reasoning - and
