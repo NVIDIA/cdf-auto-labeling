@@ -5,7 +5,7 @@
 
 # This image is expected to be built from the root of the repository using `make build`
 # Can also be built using the following command:
-# docker buildx build -t paidf-paidf-example-service -f services/example_service/docker/Dockerfile .
+# docker buildx build -t cdf-example-service -f services/example_service/docker/Dockerfile .
 # Override the workspace package to install (must match [project].name in that package):
 #   --build-arg UV_PACKAGE=your-service
 

@@ -6,13 +6,13 @@
 # detection_and_tracking_service GPU image (Osmo/Airflow-friendly).
 #
 # Build from the repository root:
-#   docker build -t paidf-detection-and-tracking-rfdetr-service \
+#   docker build -t cdf-detection-and-tracking-rfdetr-service \
 #     --build-arg PACKAGE_NAME=detection-and-tracking-service \
 #     --build-arg RUNTIME_FLAVOR=rfdetr \
 #     --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch:26.07-py3 \
 #     -f services/detection_and_tracking_service/docker/Dockerfile .
 #
-#   docker build -t paidf-detection-and-tracking-sam3-service \
+#   docker build -t cdf-detection-and-tracking-sam3-service \
 #     --build-arg PACKAGE_NAME=detection-and-tracking-service \
 #     --build-arg RUNTIME_FLAVOR=sam3 \
 #     --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch:26.07-py3 \

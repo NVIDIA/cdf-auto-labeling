@@ -65,8 +65,8 @@ runtime:
 container:
   user: auto
   images:
-    captioning: paidf-captioning-service
-    grounding_2d: paidf-grounding-2d-sam3-service
+    captioning: cdf-captioning-service
+    grounding_2d: cdf-grounding-2d-sam3-service
   env:
     - NVIDIA_API_KEY
     - SAM3_MODEL_PATH=/models/sam3

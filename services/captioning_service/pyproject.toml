@@ -29,7 +29,7 @@ main = [
 ]
 
 [tool.build.images]
-main = "docker buildx build -t paidf-captioning-service --build-arg PACKAGE_NAME=captioning-service -f services/captioning_service/docker/Dockerfile ."
+main = "docker buildx build -t cdf-captioning-service --build-arg PACKAGE_NAME=captioning-service -f services/captioning_service/docker/Dockerfile ."
 
 [tool.build.image-bases]
 main = "upa-media-base:ubuntu-vp9"

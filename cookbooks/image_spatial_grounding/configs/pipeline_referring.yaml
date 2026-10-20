@@ -41,7 +41,7 @@ runtime:
 container:
   user: auto
   images:
-    referring_expressions: paidf-referring-expressions-service
+    referring_expressions: cdf-referring-expressions-service
   env:
     - NVIDIA_API_KEY
 

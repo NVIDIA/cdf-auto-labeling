@@ -79,6 +79,8 @@ You still need, before [Getting Started](getting-started.md):
    [Samples and Cookbooks](samples-and-cookbooks.md#download-vss-sample-clips)
 4. Remote storage config only if media or outputs are not on local disk —
    [Remote Storage](remote-storage.md)
+5. Stage images, either built with `make build` or pulled prebuilt from NGC
+   with `make pull` — [NGC Containers](ngc-containers.md)
 
 Never put API keys or cloud credentials in cookbook YAML. Export them in the
 shell and pass the variable name with `--container-env`.

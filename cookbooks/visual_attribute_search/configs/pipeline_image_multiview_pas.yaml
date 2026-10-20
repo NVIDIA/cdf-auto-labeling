@@ -42,9 +42,9 @@ workflow:
 container:
   user: auto
   images:
-    captioning: paidf-captioning-service
-    visual_qa: paidf-visual-qa-service
-    person_attribute_search: paidf-event-and-person-attribute-search-service
+    captioning: cdf-captioning-service
+    visual_qa: cdf-visual-qa-service
+    person_attribute_search: cdf-event-and-person-attribute-search-service
   env:
     - NVIDIA_API_KEY
 

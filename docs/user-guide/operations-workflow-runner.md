@@ -112,6 +112,10 @@ the referring-only config. See
 
 ## Stage Images
 
+Prebuilt images for every stage are published on NGC. Run `make pull` to pull
+them and tag them with the local names the runner uses. Details and per-stage
+options: [NGC Containers](ngc-containers.md).
+
 Build a registered image from the repository root:
 
 ```bash

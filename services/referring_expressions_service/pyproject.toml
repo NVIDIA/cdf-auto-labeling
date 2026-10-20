@@ -20,7 +20,7 @@ referring-expressions = { workspace = true }
 main = "referring_expressions_service.main:main"
 
 [tool.build.images]
-main = "docker buildx build -t paidf-referring-expressions-service --build-arg PACKAGE_NAME=referring-expressions-service -f services/referring_expressions_service/docker/Dockerfile ."
+main = "docker buildx build -t cdf-referring-expressions-service --build-arg PACKAGE_NAME=referring-expressions-service -f services/referring_expressions_service/docker/Dockerfile ."
 
 [build-system]
 requires = ["hatchling"]

@@ -29,7 +29,7 @@ main = [
 ]
 
 [tool.build.images]
-build = "docker buildx build -t paidf-reasoning-service --build-arg PACKAGE_NAME=reasoning-service -f services/reasoning_service/docker/Dockerfile ."
+build = "docker buildx build -t cdf-reasoning-service --build-arg PACKAGE_NAME=reasoning-service -f services/reasoning_service/docker/Dockerfile ."
 
 [tool.build.image-bases]
 build = "upa-media-base:ubuntu-input-only"

@@ -33,8 +33,8 @@ main = "detection_and_tracking_service.main:main"
 main = "--tracker stub --input-file payloads/simple.jsonl"
 
 [tool.build.images]
-rfdetr = "docker buildx build -t paidf-detection-and-tracking-rfdetr-service --build-arg PACKAGE_NAME=detection-and-tracking-service --build-arg RUNTIME_FLAVOR=rfdetr -f services/detection_and_tracking_service/docker/Dockerfile ."
-sam3 = "docker buildx build -t paidf-detection-and-tracking-sam3-service --build-arg PACKAGE_NAME=detection-and-tracking-service --build-arg RUNTIME_FLAVOR=sam3 -f services/detection_and_tracking_service/docker/Dockerfile ."
+rfdetr = "docker buildx build -t cdf-detection-and-tracking-rfdetr-service --build-arg PACKAGE_NAME=detection-and-tracking-service --build-arg RUNTIME_FLAVOR=rfdetr -f services/detection_and_tracking_service/docker/Dockerfile ."
+sam3 = "docker buildx build -t cdf-detection-and-tracking-sam3-service --build-arg PACKAGE_NAME=detection-and-tracking-service --build-arg RUNTIME_FLAVOR=sam3 -f services/detection_and_tracking_service/docker/Dockerfile ."
 
 [build-system]
 requires = ["hatchling"]

@@ -125,11 +125,11 @@ runtime:
 container:
   user: auto
   images:
-    super_resolution: paidf-super-resolution-service
-    detection_and_tracking: paidf-detection-and-tracking-sam3-service
-    captioning: paidf-captioning-service
-    visual_qa: paidf-visual-qa-service
-    reasoning: paidf-reasoning-service
+    super_resolution: cdf-super-resolution-service
+    detection_and_tracking: cdf-detection-and-tracking-sam3-service
+    captioning: cdf-captioning-service
+    visual_qa: cdf-visual-qa-service
+    reasoning: cdf-reasoning-service
   env:
     - NVIDIA_API_KEY
     - SAM3_MODEL_PATH=/models/sam3

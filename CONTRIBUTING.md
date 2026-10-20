@@ -1,10 +1,9 @@
 # How to Contribute
 
 This repository is currently not accepting contributions. We appreciate your
-interest, but we are not accepting merge requests or issues from outside the
+interest, but we are not accepting pull requests or issues from outside the
 project team at this time.
 
-For internal team members: use the standard GitLab merge-request workflow.
 Read [`AGENTS.md`](AGENTS.md) first for setup, code conventions, and the
 required pre-submit checks (`make lint-check`, `make mypy`, `make test`), and
 see [Adding A New Task Or Service](docs/developer/adding-a-task-or-service.md)
@@ -13,7 +12,7 @@ if your change extends the repo with a new package.
 ## Code Reviews (Not Currently Accepting Public Contributions)
 
 All submissions, including submissions by project members, require review. We
-use GitLab merge requests for this purpose.
+use GitHub pull requests for this purpose.
 
 ## Signing Your Work (Not Currently Accepting Public Contributions)
 

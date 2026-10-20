@@ -1,4 +1,4 @@
-# paidf-auto-labeling
+# cdf-auto-labeling
 
 A Python framework for pseudo-annotating large, unlabeled video and image datasets. Structured as a **uv workspace** (monorepo) with three layers:
 
@@ -123,11 +123,11 @@ main = "docker buildx build -t captioning-service -f services/captioning_service
 main = "upa-media-base:ubuntu-vp9"
 ```
 
-In the generated GitLab config the base builds first (with a longer timeout), the service job gains a `needs:` on it, and the base's pushed ref is passed to the service build as the `BUILDER_BASE_IMAGE` build arg. Pass extra build args to any target with `scripts/build.py <target> --build-arg KEY=VALUE`.
+Build the base first, then pass its ref to the service build as the `BUILDER_BASE_IMAGE` build arg. Pass extra build args to any target with `scripts/build.py <target> --build-arg KEY=VALUE`.
 
 `make build` does not build a declared base automatically, so building a base-consuming service locally is a two-step: build the base first, then the service (which picks up the local base image via the Dockerfile's `BUILDER_BASE_IMAGE` default). For example, `make build IMAGE=upa-media-base:ubuntu-vp9` then `make build IMAGE=captioning-service:main`.
 
-Images build for both `linux/amd64` and `linux/arm64`. Use `docker buildx build` so `scripts/build.py` can add the platform list. In CI each image builds twice: an amd64 job on the `sdg` runners and an arm64 job on the `arm-sdg` runners. Each job pushes a per-arch `<ref>-<arch>` tag, then a merge job runs `docker buildx imagetools create` to combine the two into one manifest-list tag. The per-arch tags stay in the registry as intermediate tags; they share layers and manifests with the final tag so they cost little, but nothing prunes them (registry retention handles cleanup). The two arch jobs run at the same time, but only one build runs per pool at once (`resource_group: docker-build-<arch>`). Each arch keeps its own registry cache (`buildcache-<image>-<version>-<arch>`) so the builds don't overwrite each other. A local `make build` (no push) can't load a manifest list, so it only builds the host architecture. Every base image and `COPY --from` reference must resolve on both platforms — pin bases to a manifest-list (index) digest, not a single-arch one. Override the platform list with `--platform`, e.g. `make build IMAGE=example-service:build` builds host-only, and `scripts/build.py example-service:build --platform linux/arm64 --tag <ref> --push` builds arm64 only.
+Images build for both `linux/amd64` and `linux/arm64`. Use `docker buildx build` so `scripts/build.py` can add the platform list. A pushed single-arch build keeps its own registry cache (`buildcache-<image>-<version>-<arch>`) so amd64 and arm64 builds don't overwrite each other. A local `make build` (no push) can't load a manifest list, so it only builds the host architecture. Every base image and `COPY --from` reference must resolve on both platforms — pin bases to a manifest-list (index) digest, not a single-arch one. Override the platform list with `--platform`, e.g. `make build IMAGE=example-service:build` builds host-only, and `scripts/build.py example-service:build --platform linux/arm64 --tag <ref> --push` builds arm64 only.
 
 ---
 
@@ -238,22 +238,6 @@ make test    # runs pytest --cov across all packages and services
 
 ---
 
-## CI/CD
-
-GitLab CI (`.gitlab-ci.yml`) runs three jobs on every MR and push to `main`:
-
-| Stage | Job | Command |
-|-------|-----|---------|
-| lint | ruff | `make lint-check` |
-| lint | mypy | `make mypy` |
-| test | unit-test | `make test` |
-
-All three must pass before merging. The test job produces `test_report.xml` and `coverage_report.xml` artifacts.
-
-Docker image: `ghcr.io/astral-sh/uv:0.5-python3.12-bookworm-slim`
-
----
-
 ## Key Files
 
 | File | Purpose |
@@ -265,5 +249,4 @@ Docker image: `ghcr.io/astral-sh/uv:0.5-python3.12-bookworm-slim`
 | `packages/core/src/core/__init__.py` | Core abstractions entry point |
 | `packages/tasks/example_task/` | Template for new task packages |
 | `services/example_service/` | Template for new service packages |
-| `.gitlab-ci.yml` | CI pipeline definition |
 | `.pre-commit-config.yaml` | Pre-commit hooks (ruff check + format) |

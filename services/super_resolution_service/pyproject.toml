@@ -28,7 +28,7 @@ main = [
 ]
 
 [tool.build.images]
-build = "docker buildx build -t paidf-super-resolution-service --build-arg PACKAGE_NAME=super-resolution-service -f services/super_resolution_service/docker/Dockerfile ."
+build = "docker buildx build -t cdf-super-resolution-service --build-arg PACKAGE_NAME=super-resolution-service -f services/super_resolution_service/docker/Dockerfile ."
 
 [build-system]
 requires = ["hatchling"]

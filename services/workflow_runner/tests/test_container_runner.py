@@ -105,10 +105,10 @@ def test_container_plan_matches_pending_stage_service_contracts(tmp_path: Path) 
         "reasoning",
     ]
     assert [stage.image for stage in plan.stages] == [
-        "paidf-super-resolution-service",
-        "paidf-detection-and-tracking-rfdetr-service",
-        "paidf-captioning-service",
-        "paidf-reasoning-service",
+        "cdf-super-resolution-service",
+        "cdf-detection-and-tracking-rfdetr-service",
+        "cdf-captioning-service",
+        "cdf-reasoning-service",
     ]
     for stage in plan.stages:
         assert "--input-file" in stage.args
@@ -290,7 +290,7 @@ def test_container_runner_writes_per_scene_event_log(tmp_path: Path) -> None:
     assert [event["event"] for event in events] == ["start", "success"]
     assert [event["node_id"] for event in events] == ["captioning", "captioning"]
     assert [event["stage"] for event in events] == ["captioning", "captioning"]
-    assert events[0]["image"] == "paidf-captioning-service"
+    assert events[0]["image"] == "cdf-captioning-service"
     assert events[0]["command"][:2] == ["docker", "run"]
     assert events[1]["returncode"] == 0
 
@@ -527,7 +527,7 @@ def test_stage_service_args_resolve_local_paths(tmp_path: Path) -> None:
     assert str(Path("question_bank.json").resolve()) in visual_qa_args
     assert str(Path("reasoning.yaml").resolve()) in reasoning_args
     assert plan.stages[3].name == "training_export"
-    assert plan.stages[3].image == "paidf-training-export-service"
+    assert plan.stages[3].image == "cdf-training-export-service"
     assert _stage_flag_values(list(training_export_args))["--training-export-dir"] == str(
         Path("exports/training").resolve()
     )
@@ -1263,7 +1263,7 @@ def test_container_plan_includes_person_attribute_search_stage(tmp_path: Path) -
         "person_attribute_search",
     ]
     pas_stage = plan.stages[-1]
-    assert pas_stage.image == "paidf-event-and-person-attribute-search-service"
+    assert pas_stage.image == "cdf-event-and-person-attribute-search-service"
     assert pas_stage.build_target == "event-and-person-attribute-search-service:build"
     assert "--config-file" in pas_stage.args
     assert str(pas_config.resolve()) in pas_stage.args
@@ -1380,7 +1380,7 @@ def test_legacy_daft_export_stage_alias_resolves_to_reasoning(tmp_path: Path) ->
         plan = build_container_plan(args, entries, input_file=input_file)
 
     assert [stage.name for stage in plan.stages] == ["captioning", "reasoning"]
-    assert plan.stages[-1].image == "paidf-reasoning-service"
+    assert plan.stages[-1].image == "cdf-reasoning-service"
 
 
 def test_cookbook_legacy_daft_export_section_maps_to_reasoning(tmp_path: Path) -> None:

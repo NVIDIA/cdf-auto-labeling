@@ -4,7 +4,7 @@
 """E2E tests for the super-resolution service.
 
 Real SeedVR2 upscaling requires GPU model weights, which are out of scope for the
-MR-gating suite. These tests cover the service wiring without heavy inference:
+pre-merge suite. These tests cover the service wiring without heavy inference:
 
 * always-on: ``--disabled`` exits cleanly without touching media.
 * endpoint/ffmpeg-free auto path: skip SR when the input already meets the target

@@ -61,7 +61,7 @@ def test_sam3_image_build_is_independent_of_detection_service_image() -> None:
     images = _build_images()
     sam3_cmd = images["sam3"]
 
-    assert "paidf-grounding-2d-sam3-service" in sam3_cmd
+    assert "cdf-grounding-2d-sam3-service" in sam3_cmd
     assert "PACKAGE_NAME=grounding-2d-service" in sam3_cmd
     assert "RUNTIME_FLAVOR=sam3" in sam3_cmd
     assert "-f services/grounding_2d_service/docker/Dockerfile.gpu" in sam3_cmd
@@ -75,6 +75,6 @@ def test_main_image_remains_slim_cpu_path() -> None:
     images = _build_images()
     main_cmd = images["main"]
 
-    assert "paidf-grounding-2d-service" in main_cmd
+    assert "cdf-grounding-2d-service" in main_cmd
     assert "services/grounding_2d_service/docker/Dockerfile" in main_cmd
     assert "RUNTIME_FLAVOR" not in main_cmd

@@ -27,7 +27,7 @@ main = [
 ]
 
 [tool.build.images]
-build = "docker buildx build -t paidf-event-and-person-attribute-search-service --build-arg PACKAGE_NAME=event-and-person-attribute-search-service -f services/event_and_person_attribute_search_service/docker/Dockerfile ."
+build = "docker buildx build -t cdf-event-and-person-attribute-search-service --build-arg PACKAGE_NAME=event-and-person-attribute-search-service -f services/event_and_person_attribute_search_service/docker/Dockerfile ."
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/event_and_person_attribute_search_service"]

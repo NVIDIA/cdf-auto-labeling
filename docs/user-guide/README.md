@@ -12,6 +12,8 @@ Typical commands:
 - `make sync` — install the workspace
 - `make run SCRIPT=workflow-runner:main ARGS='...'` — run a cookbook
 - `make build IMAGE=<service>:<target>` — build a stage image when needed
+- `make pull` — pull the prebuilt stage images from [NGC](ngc-containers.md)
+  instead of building them
 
 Read the pages in this order the first time. After that, use the table as a
 lookup.
@@ -38,6 +40,7 @@ paths. If something fails, use [Troubleshooting](troubleshooting.md).
 | Pick a sample cookbook | [Samples and Cookbooks](samples-and-cookbooks.md) |
 | Run, debug, or understand one service | [Services](services/README.md) |
 | Compile and launch a cookbook | [Operations: Workflow Runner](operations-workflow-runner.md) |
+| Pull prebuilt stage images from NGC instead of building them | [NGC Containers](ngc-containers.md) |
 | Wire VLM and LLM endpoints | [VLM and LLM Endpoints](vlm-llm-endpoints.md) |
 | Download checkpoints | [Model Provisioning](model-provisioning.md) |
 | Use S3/GCS/Azure/HTTP scene or media paths | [Remote Storage](remote-storage.md) |

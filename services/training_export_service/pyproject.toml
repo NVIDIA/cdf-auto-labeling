@@ -26,7 +26,7 @@ main = [
 ]
 
 [tool.build.images]
-build = "docker buildx build -t paidf-training-export-service --build-arg PACKAGE_NAME=training-export-service -f services/training_export_service/docker/Dockerfile ."
+build = "docker buildx build -t cdf-training-export-service --build-arg PACKAGE_NAME=training-export-service -f services/training_export_service/docker/Dockerfile ."
 
 [tool.build.image-bases]
 build = "upa-media-base:ubuntu-input-only"

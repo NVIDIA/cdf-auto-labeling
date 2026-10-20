@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-Do not report suspected vulnerabilities in a GitLab issue, merge request,
+Do not report suspected vulnerabilities in a GitHub issue, pull request,
 discussion, or other public project channel.
 
 Report potential NVIDIA product vulnerabilities through NVIDIA PSIRT:
