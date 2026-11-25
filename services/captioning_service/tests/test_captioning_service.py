@@ -49,6 +49,7 @@ def test_build_config_maps_cli_args() -> None:
         max_frames=4,
         resolution=512,
         media_mode="auto",
+        video_codec="h264",
         max_tokens=256,
         summary_input_token_budget=512,
         temperature=0.1,
@@ -85,6 +86,7 @@ def test_build_config_maps_cli_args() -> None:
     assert config.sampling_fps == 2.0
     assert config.max_frames == 4
     assert config.resolution == 512
+    assert config.video_codec == "h264"
     assert config.media_mode == "auto"
     assert config.max_tokens == 256
     assert config.summary_input_token_budget == 512
@@ -107,6 +109,7 @@ def test_parser_defaults_enable_auto_captioning() -> None:
     args = parser.parse_args([])
     config = build_config(args)
 
+    assert config.video_codec == "vp9"
     assert config.enabled is True
     assert config.input_source == "auto"
     assert config.image_group_dir is None

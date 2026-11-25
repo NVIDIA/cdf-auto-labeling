@@ -97,3 +97,16 @@ For error output you don't recognize, see
 
 [Visual QA](visual-qa.md) or [Reasoning](reasoning.md) typically consume
 captioning output next.
+
+### Inference video encoding
+
+Captioning uses VP9 for extracted video windows by default. For an endpoint that
+requires H.264, select `--media-mode video --video-codec h264` (or set
+`CaptioningConfig.video_codec="h264"` when using the Python API). Windows are
+encoded directly in the selected codec; no second conversion is needed. A whole
+H.264 MP4 can pass through unchanged. Frame-mode requests are unaffected.
+
+H.264 inference encoding requires a Python runtime whose PyAV provides `libx264`.
+The standard controlled container profiles remain VP9-only; requesting H.264
+without encoder support fails explicitly. This option affects temporary inference
+payloads, not persisted annotation videos or source media.

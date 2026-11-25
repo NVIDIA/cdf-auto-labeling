@@ -299,7 +299,9 @@ def test_extract_window_video_payload_rejects_missing_input(tmp_path: Path) -> N
         )
 
 
-def test_extract_window_video_payload_uses_core_decode_and_vp9_writer(
+@pytest.mark.parametrize("video_codec", ["vp9", "h264"])
+def test_extract_window_video_payload_uses_core_decode_and_selected_writer(
+    video_codec: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -325,7 +327,7 @@ def test_extract_window_video_payload_uses_core_decode_and_vp9_writer(
             writes.append(frame.copy())
 
     monkeypatch.setattr(media, "_prepare_video_decode", lambda _path: plan)
-    monkeypatch.setattr(media, "Vp9VideoWriter", _FakeWriter)
+    monkeypatch.setattr(media, "VideoWriter", _FakeWriter)
     monkeypatch.setattr(
         media,
         "iter_decoded_rgb24_frames",
@@ -342,8 +344,10 @@ def test_extract_window_video_payload_uses_core_decode_and_vp9_writer(
             end_frame=2,
         ),
         total_frames=10,
+        video_codec=video_codec,
     )
 
+    assert writer_options["codec"] == video_codec
     assert payload.num_bytes == len(b"vp9-mp4")
     assert writer_options["frame_format"] == "rgb24"
     assert [frame.tolist() for frame in writes] == [[[[1, 2, 3]]], [[[4, 5, 6]]]]
@@ -368,7 +372,7 @@ def test_extract_window_video_payload_normalizes_decode_error(
             pass
 
     monkeypatch.setattr(media, "_prepare_video_decode", lambda _path: plan)
-    monkeypatch.setattr(media, "Vp9VideoWriter", _FakeWriter)
+    monkeypatch.setattr(media, "VideoWriter", _FakeWriter)
     monkeypatch.setattr(media, "iter_decoded_rgb24_frames", _failing_frames)
 
     with pytest.raises(MediaDecodeError, match=r"decode window.*clip\.webm") as exc_info:
@@ -385,3 +389,37 @@ def test_extract_window_video_payload_normalizes_decode_error(
 def test_resize_frame_rejects_non_positive_resolution(resolution: int) -> None:
     with pytest.raises(ValueError, match="resolution must be a positive integer"):
         _resize_frame(object(), object(), resolution)
+
+
+def test_full_h264_payload_is_not_reencoded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"original-h264")
+    monkeypatch.setattr(
+        media,
+        "probe_video_stream",
+        lambda _: VideoStreamInfo(
+            codec_name="h264",
+            width=32,
+            height=32,
+            fps=10.0,
+        ),
+    )
+
+    def unexpected_writer(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("Whole H.264 input must not be encoded")
+
+    monkeypatch.setattr(media, "VideoWriter", unexpected_writer)
+    payload = extract_window_video_payload(
+        media_path=video,
+        window=CaptionWindow(0, 0, 1, 0, 9),
+        total_frames=10,
+        video_codec="h264",
+    )
+    assert payload.data_base64 == "b3JpZ2luYWwtaDI2NA=="
+
+
+def test_caption_config_rejects_unsupported_codec() -> None:
+    with pytest.raises(ValueError, match="video_codec"):
+        CaptioningConfig(video_codec="hevc")

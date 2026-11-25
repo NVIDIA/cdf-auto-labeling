@@ -15,7 +15,13 @@ from core.media.video_codecs import (
     prepare_video_decode,
     probe_video_stream,
 )
-from core.media.vp9_output import VP9_ENCODER_OPTIONS, Vp9VideoWriter, configure_vp9_output_stream
+from core.media.video_output import (
+    VP9_ENCODER_OPTIONS,
+    VideoCodec,
+    VideoWriter,
+    Vp9VideoWriter,
+    configure_vp9_output_stream,
+)
 
 __all__ = [
     "H264_GPU_REQUIRED_MESSAGE",
@@ -25,6 +31,8 @@ __all__ = [
     "VideoDecoderUnavailableError",
     "VideoStreamInfo",
     "VP9_ENCODER_OPTIONS",
+    "VideoCodec",
+    "VideoWriter",
     "Vp9VideoWriter",
     "configure_vp9_output_stream",
     "discover_image_group",

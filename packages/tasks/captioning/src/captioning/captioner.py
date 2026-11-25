@@ -383,6 +383,7 @@ class DenseCaptioner:
             "resolution": self.config.resolution,
             "max_frames": self.config.max_frames,
             "media_mode": self.config.media_mode,
+            "video_codec": self.config.video_codec,
             "caption_key": "description",
         }
         if self.config.preserve_raw_model_output:
@@ -575,6 +576,7 @@ class DenseCaptioner:
                     media_path=media_path,
                     window=window,
                     total_frames=info.frame_count,
+                    video_codec=self.config.video_codec,
                 )
                 return [video_payload], "video", None
             except MediaDecodeError as exc:

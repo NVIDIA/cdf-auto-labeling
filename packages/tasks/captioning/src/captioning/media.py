@@ -17,12 +17,14 @@ from typing import Any
 from core import is_image_path
 from core.media import (
     UnsupportedVideoCodecError,
+    VideoCodec,
     VideoDecodeError,
     VideoDecodePlan,
     VideoDecoderUnavailableError,
-    Vp9VideoWriter,
+    VideoWriter,
     iter_decoded_rgb24_frames,
     prepare_video_decode,
+    probe_video_stream,
 )
 
 from captioning.clients import MediaPayload
@@ -160,17 +162,21 @@ def extract_window_video_payload(
     media_path: Path,
     window: CaptionWindow,
     total_frames: int,
+    video_codec: VideoCodec = "vp9",
 ) -> MediaPayload:
     """Extract one MP4 payload for ``window`` using inclusive frame bounds."""
     if (
         media_path.suffix.lower() == ".mp4"
         and window.start_frame <= 0
         and window.end_frame >= total_frames - 1
+        and (video_codec == "vp9" or probe_video_stream(media_path).codec_name == video_codec)
     ):
         data = media_path.read_bytes()
         filename = media_path.name
     else:
-        data, filename = _extract_window_mp4(media_path=media_path, window=window)
+        data, filename = _extract_window_mp4(
+            media_path=media_path, window=window, video_codec=video_codec
+        )
 
     return MediaPayload(
         mime_type="video/mp4",
@@ -351,7 +357,9 @@ def _sample_frame_ids(
     return sorted(set(selected))
 
 
-def _extract_window_mp4(*, media_path: Path, window: CaptionWindow) -> tuple[bytes, str]:
+def _extract_window_mp4(
+    *, media_path: Path, window: CaptionWindow, video_codec: VideoCodec = "vp9"
+) -> tuple[bytes, str]:
     if not media_path.exists() or not media_path.is_file():
         raise ValueError(f"media_path must be an existing file: {media_path}")
     filename = f"{media_path.stem}_window_{window.index:03d}.mp4"
@@ -362,12 +370,13 @@ def _extract_window_mp4(*, media_path: Path, window: CaptionWindow) -> tuple[byt
 
         shape = (plan.stream.height, plan.stream.width, 3)
         encoded_frames = 0
-        with Vp9VideoWriter(
+        with VideoWriter(
             out_path,
             width=plan.stream.width,
             height=plan.stream.height,
             fps=plan.stream.fps or 30.0,
             frame_format="rgb24",
+            codec=video_codec,
         ) as writer:
             try:
                 for frame_id, payload in enumerate(iter_decoded_rgb24_frames(media_path, plan)):

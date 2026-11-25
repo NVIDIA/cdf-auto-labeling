@@ -165,9 +165,13 @@ implementing service-specific codec behavior.
 - VP9 input should prefer NVIDIA CUVID and may fall back to FFmpeg's native software VP9
   decoder.
 - MPEG-4 Part 2 input must use FFmpeg's native software `mpeg4` decoder.
-- Every generated video must use **VP9** via `libvpx-vp9`. MP4 is the standard output
+- Persisted annotation videos must use **VP9** via `libvpx-vp9`. MP4 is the standard output
   container unless a task contract explicitly requires another container. Do not generate
   H.264, MPEG-4 Part 2 (`mp4v`), H.265/HEVC, or other compressed-video formats.
+- Temporary caption inference payloads may explicitly request H.264 via the shared
+  `core.media.VideoWriter` when the endpoint rejects VP9. This requires a runtime
+  that provides `libx264`; it does not change the default VP9 behavior or the
+  controlled container build profiles. Do not add a second encoding pass in adapters.
 - Generated annotation videos contain video only; do not preserve or add audio unless a task
   contract explicitly requires it and the codec policy is extended first.
 

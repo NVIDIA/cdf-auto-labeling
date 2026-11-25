@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Literal, Self
 
+from core.media import VideoCodec
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 EndpointProvider = Literal["openai-compatible", "gemini"]
@@ -49,6 +50,7 @@ class CaptioningConfig(BaseModel):
     max_frames: int = Field(default=8, ge=1)
     resolution: int = Field(default=768, ge=64)
     media_mode: CaptionMediaMode = "auto"
+    video_codec: VideoCodec = "vp9"
 
     max_tokens: int = Field(default=1024, ge=1)
     summary_input_token_budget: int = Field(default=6000, ge=1)

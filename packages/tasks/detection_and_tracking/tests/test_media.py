@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 import pytest
-from core.media import VideoDecodePlan, VideoStreamInfo, vp9_output
+from core.media import VideoDecodePlan, VideoStreamInfo, video_output
 from detection_and_tracking import media
 from detection_and_tracking.media import (
     Vp9VideoWriter,
@@ -154,7 +154,7 @@ def test_vp9_writer_uses_shared_encoder_policy(
         open=lambda *_args, **_kwargs: container,
         VideoFrame=SimpleNamespace(from_ndarray=lambda frame, format: (frame, format)),
     )
-    monkeypatch.setattr(vp9_output, "_import_av", lambda: av_module)
+    monkeypatch.setattr(video_output, "_import_av", lambda: av_module)
 
     with Vp9VideoWriter(
         tmp_path / "overlay.mp4",

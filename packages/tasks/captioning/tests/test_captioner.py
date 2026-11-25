@@ -421,6 +421,7 @@ def test_auto_media_mode_reraises_unexpected_video_payload_errors(
         media_path: Path,
         window: CaptionWindow,
         total_frames: int,
+        video_codec: str = "vp9",
     ) -> MediaPayload:
         raise RuntimeError("unexpected payload regression")
 
@@ -488,6 +489,7 @@ def _patch_single_window_video(
         media_path: Path,
         window: CaptionWindow,
         total_frames: int,
+        video_codec: str = "vp9",
     ) -> MediaPayload:
         return MediaPayload(
             mime_type="video/mp4",

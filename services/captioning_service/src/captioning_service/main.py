@@ -181,6 +181,12 @@ class CaptioningService(ServiceInterface):
             ),
         )
         captioning.add_argument(
+            "--video-codec",
+            choices=["vp9", "h264"],
+            default="vp9",
+            help="Codec for inference windows; h264 requires a PyAV libx264 encoder.",
+        )
+        captioning.add_argument(
             "--max-tokens",
             type=int,
             default=1024,
@@ -288,6 +294,7 @@ def build_config(args: argparse.Namespace) -> CaptioningConfig:
         max_frames=args.max_frames,
         resolution=args.resolution,
         media_mode=args.media_mode,
+        video_codec=args.video_codec,
         max_tokens=args.max_tokens,
         summary_input_token_budget=args.summary_input_token_budget,
         temperature=args.temperature,
