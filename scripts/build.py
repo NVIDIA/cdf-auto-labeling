@@ -17,9 +17,11 @@ after a successful build.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -35,6 +37,21 @@ JSON_FORMAT = "json"
 
 # Platforms to build for when a buildx command is pushed as a manifest list.
 DEFAULT_BUILD_PLATFORMS = "linux/amd64,linux/arm64"
+
+# Every built image is labeled with a digest of the source it was built from, so
+# a test harness can tell an image that matches the working tree from a stale one.
+SOURCE_DIGEST_LABEL = "upa.source-digest"
+# What the Dockerfiles copy into images (plus the Dockerfiles themselves).
+SOURCE_DIGEST_PATHS = (
+    "packages",
+    "services",
+    "scripts",
+    "docker",
+    "pyproject.toml",
+    "uv.lock",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES",
+)
 
 
 @dataclass(frozen=True)
@@ -585,6 +602,39 @@ def _execute_buildx_build(
     return subprocess.run(buildx_command, cwd=REPO_ROOT, check=False).returncode
 
 
+def source_digest(repo_root: Path | None = None) -> str | None:
+    """SHA-256 over the image source files as they are on disk, uncommitted edits included.
+
+    Covers tracked and untracked (not ignored) files under ``SOURCE_DIGEST_PATHS``.
+    Returns ``None`` outside a git checkout or when git is not installed.
+    """
+    root = repo_root or REPO_ROOT
+    if shutil.which("git") is None:
+        return None
+    # Popen rather than run: callers and tests may stub subprocess.run for Docker.
+    with subprocess.Popen(
+        ["git", "ls-files", "-z", "-c", "-o", "--exclude-standard", "--", *SOURCE_DIGEST_PATHS],
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    ) as process:
+        listing, _ = process.communicate()
+    if process.returncode != 0:
+        return None
+    digest = hashlib.sha256()
+    for name in sorted(set(listing.decode().split("\0")) - {""}):
+        path = root / name
+        if path.is_file():
+            digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()
+
+
+def _append_source_label(command: list[str]) -> list[str]:
+    """Label the image with the source digest (no label outside a git checkout)."""
+    digest = source_digest()
+    return [*command, "--label", f"{SOURCE_DIGEST_LABEL}={digest}"] if digest else command
+
+
 def _append_build_args(command: list[str], build_args: tuple[str, ...]) -> list[str]:
     """Append ``--build-arg KEY=VALUE`` pairs to a Docker build command."""
 
@@ -660,6 +710,7 @@ def execute_build(
     if tag is not None:
         command = _replace_build_tag(command, tag)
     command = _append_build_args(command, build_args)
+    command = _append_source_label(command)
 
     if _is_buildx_command(command):
         return _execute_buildx_build(command, image, tag=tag, push=push, platforms=platforms)

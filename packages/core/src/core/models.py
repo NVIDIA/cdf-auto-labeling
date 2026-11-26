@@ -10,7 +10,7 @@ from the scene directory itself. Task-specific payload schemas belong to the
 task packages that write them and are stored under ``task_artifacts``.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from uuid import uuid4
 
@@ -149,15 +149,19 @@ def update_annotation_export_state(
     emitter_artifacts: Mapping[str, Path | str | None],
     data_entry_id: str | None = None,
     media_path: str | None = None,
+    not_applicable: Collection[str] = (),
 ) -> Path:
     """Merge annotation-export emitter outcomes into the scene pipeline state.
 
-    Only emitters named in ``emitter_artifacts`` are replaced. Existing
-    outcomes for other emitters are preserved so independently run services do
+    Only emitters named in ``emitter_artifacts`` are replaced; a ``None``
+    artifact records an emitter that should have written and did not
+    (``success: false``). Emitters in ``not_applicable`` (disabled, or not
+    meaningful for this scene) are removed rather than recorded as failures.
+    Outcomes for other emitters are preserved so independently run services do
     not erase each other's artifact inventory.
     """
     state = read_pipeline_state(scene_dir)
-    owned_names = set(emitter_artifacts)
+    owned_names = set(emitter_artifacts) | set(not_applicable)
     existing_emitters = (
         []
         if state.annotation_export is None

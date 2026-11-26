@@ -57,13 +57,6 @@ class WorkflowRunnerService(ServiceInterface):
         self._add_reasoning_flags(parser)
         self._add_training_export_flags(parser)
 
-    def build_parser(self) -> argparse.ArgumentParser:
-        """Build the full CLI parser with common and service-specific flags."""
-        parser = argparse.ArgumentParser(description=self.description)
-        self._add_common_args(parser)
-        self.add_service_args(parser)
-        return parser
-
     def _add_stage_flags(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument(
             "--stages",
@@ -414,7 +407,7 @@ class WorkflowRunnerService(ServiceInterface):
         )
 
     def execute(self, args: argparse.Namespace, data_entries: list[DataEntry]) -> None:
-        protected_options = explicit_cli_options()
+        protected_options = explicit_cli_options() | getattr(args, "supplied_cli_options", set())
         cookbook_entries = apply_cookbook_config(args, protected_options=protected_options)
         if not data_entries:
             data_entries = cookbook_entries

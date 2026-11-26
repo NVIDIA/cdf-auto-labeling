@@ -34,15 +34,20 @@ local pairing is:
 Follow your serving stack's own deployment instructions. Once both are up:
 
 ```bash
-export UAL_VLM_URL="http://localhost:8000/v1"
-export UAL_VLM_MODEL="Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"
-export UAL_LLM_URL="http://localhost:8002/v1"
-export UAL_LLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
+export CDF_VLM_URL="http://localhost:8000/v1"
+export CDF_VLM_MODEL="Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"
+export CDF_LLM_URL="http://localhost:8002/v1"
+export CDF_LLM_MODEL="Qwen/Qwen2.5-14B-Instruct"
 export NVIDIA_API_KEY="EMPTY"
 ```
 
 `NVIDIA_API_KEY=EMPTY` satisfies clients that require an `Authorization`
 header even though a local, unauthenticated endpoint ignores its value.
+
+If a model produces malformed JSON, visual QA's opt-in `--constrained-json`
+can help when the endpoint supports JSON schemas. It does not guarantee
+complete or correct answers; see [Visual QA](services/visual-qa.md). One served
+model can also fill both roles: point the LLM URL and model at the VLM.
 
 ### Scenario B — Use a hosted endpoint
 
@@ -52,10 +57,10 @@ from your deployment — do not reuse an endpoint ID from an older project, sinc
 hosted deployments can rotate:
 
 ```bash
-export UAL_VLM_URL="<provided-vlm-endpoint>/v1"
-export UAL_VLM_MODEL="<provided-vlm-model>"
-export UAL_LLM_URL="<provided-llm-endpoint>/v1"
-export UAL_LLM_MODEL="<provided-llm-model>"
+export CDF_VLM_URL="<provided-vlm-endpoint>/v1"
+export CDF_VLM_MODEL="<provided-vlm-model>"
+export CDF_LLM_URL="<provided-llm-endpoint>/v1"
+export CDF_LLM_MODEL="<provided-llm-model>"
 export NVIDIA_API_KEY="<your-personal-api-key>"
 ```
 
@@ -73,10 +78,10 @@ reasoning and can otherwise return truncated or empty results.
 ```bash
 curl --fail --silent --show-error \
   --header "Authorization: Bearer $NVIDIA_API_KEY" \
-  "$UAL_VLM_URL/models" >/dev/null
+  "$CDF_VLM_URL/models" >/dev/null
 curl --fail --silent --show-error \
   --header "Authorization: Bearer $NVIDIA_API_KEY" \
-  "$UAL_LLM_URL/models" >/dev/null
+  "$CDF_LLM_URL/models" >/dev/null
 ```
 
 Both commands should exit `0` with no output. A non-zero exit means the

@@ -1898,3 +1898,122 @@ data: []
 
 def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def test_socket_executor_translates_mount_sources_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "UPA_CONTAINER_HOST_MOUNTS",
+        json.dumps(
+            {
+                "/builds": "/var/lib/docker/volumes/runner-builds/_data",
+                "/builds/project/models": "/srv/checkpoints",
+            }
+        ),
+    )
+    config = runner_config_from_args(
+        _runner_args(),
+        (
+            VolumeMount(Path("/builds/project/input.jsonl"), "/builds/project/input.jsonl", True),
+            VolumeMount(Path("/builds/project/models/sam3"), "/models/sam3", True),
+            VolumeMount(Path("/builds/project/output"), "/builds/project/output"),
+        ),
+    )
+    assert config.mounts == (
+        VolumeMount(
+            Path("/var/lib/docker/volumes/runner-builds/_data/project/input.jsonl"),
+            "/builds/project/input.jsonl",
+            True,
+        ),
+        VolumeMount(Path("/srv/checkpoints/sam3"), "/models/sam3", True),
+        VolumeMount(
+            Path("/var/lib/docker/volumes/runner-builds/_data/project/output"),
+            "/builds/project/output",
+        ),
+    )
+    with pytest.raises(ValueError, match="not covered"):
+        runner_config_from_args(_runner_args(), (VolumeMount(Path("/builds-other/file"), "/file"),))
+
+
+def test_local_mounts_unchanged_without_socket_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("UPA_CONTAINER_HOST_MOUNTS", raising=False)
+    mounts = (VolumeMount(Path("/tmp/input"), "/tmp/input", True),)
+    assert runner_config_from_args(_runner_args(), mounts).mounts == mounts
+
+
+@pytest.mark.parametrize("mapping", ["[]", '{"/builds": "relative"}', '{"/builds": 1}'])
+def test_invalid_host_mount_mapping_is_rejected(
+    mapping: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UPA_CONTAINER_HOST_MOUNTS", mapping)
+    with pytest.raises(ValueError, match="absolute container paths"):
+        runner_config_from_args(_runner_args(), (VolumeMount(Path("/builds/project"), "/project"),))
+
+
+@pytest.mark.parametrize("script", ["", "captioning-service:main"])
+@pytest.mark.parametrize("exit_code", [0, 19])
+def test_container_launcher_shares_manifest_path_and_propagates_failure(
+    tmp_path: Path, exit_code: int, script: str
+) -> None:
+    """Launch without uv and clean the shared temporary directory on either outcome."""
+    repo = Path(__file__).resolve().parents[3]
+    work = tmp_path / "workspace with spaces"
+    work.mkdir()
+    bins = tmp_path / "bin"
+    bins.mkdir()
+    capture = tmp_path / "docker-args"
+    for name, body in {
+        "docker": (
+            'case "$*" in *--container-image*) echo cdf-captioning-service; exit 0;; esac; '
+            'printf "%s\\n" "$@" > "$CAPTURE"; exit "$EXIT_CODE"'
+        ),
+        "stat": "echo 123",
+        "uv": "exit 99",
+        "python3": "exit 99",
+    }.items():
+        executable = bins / name
+        executable.write_text("#!/bin/sh\n" + body + "\n")
+        executable.chmod(0o755)
+    result = subprocess.run(
+        ["make", "-f", str(repo / "Makefile"), "run", f"SCRIPT={script}", "ARGS=--help"],
+        cwd=work,
+        env={
+            **os.environ,
+            "PATH": str(bins) + os.pathsep + os.environ["PATH"],
+            "CAPTURE": str(capture),
+            "EXIT_CODE": str(exit_code),
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert (result.returncode == 0) == (exit_code == 0), result.stderr
+    args = capture.read_text().splitlines()
+    assert f"type=bind,src={work},dst={work}" in args
+    socket_mount = "--mount=type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock"
+    assert (socket_mount in args) == (not script)
+    assert "--group-add" in args and "123" in args
+    assert args[-1] == "--help"
+    assert args[-2] == ("cdf-captioning-service" if script else "cdf-workflow-runner")
+    assert any(arg.startswith(f"TMPDIR={work}/.workflow-runner.") for arg in args)
+    assert not list(work.glob(".workflow-runner.*"))
+
+
+@pytest.mark.parametrize(
+    ("target", "image"),
+    [
+        ("captioning-service:main", "cdf-captioning-service"),
+        ("detection-and-tracking-service:main", "cdf-detection-and-tracking-rfdetr-service"),
+        ("grounding-2d-service:main", "cdf-grounding-2d-service"),
+        ("example-service:main", "cdf-example-service"),
+    ],
+)
+def test_container_script_uses_registered_default_image(target: str, image: str) -> None:
+    """Multiple detector images must select the same default as the workflow runner."""
+    workspace_run = importlib.import_module("run")
+    assert workspace_run.container_image(target) == image
+
+
+def test_container_script_rejects_unknown_target() -> None:
+    """A mistyped script must fail instead of launching a different service."""
+    workspace_run = importlib.import_module("run")
+    with pytest.raises(ValueError, match="Unknown target"):
+        workspace_run.container_image("missing-service:main")

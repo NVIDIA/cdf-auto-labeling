@@ -125,6 +125,13 @@ make run SCRIPT=workflow-runner:main \
 
 ## Gotchas
 
+- Installed tracker plug-ins register callable factories through `cdf.trackers`
+  entry points. Install the plug-in in the service image; see
+  [tracker integration](../../../../docs/developer/adding-a-task-or-service.md).
+- `--min-track-seconds` filters crop tracks by their recorded start/end times.
+  RF-DETR uses decoder presentation timestamps when available, with frame/FPS
+  timing only as a fallback; do not infer duration from sampled frame counts.
+
 - Must run before `person_attribute_search` (Visual Attribute Search,
   `event-and-person-attribute-search-service`), whose per-object unit is the track/crop.
 - Do not add non-COCO names (`forklift`, `hard hat`, `pallet jack`, ...) to RF-DETR

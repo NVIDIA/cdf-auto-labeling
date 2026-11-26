@@ -16,10 +16,10 @@ __pycache__/
 .coverage
 coverage_report.xml
 test_report.xml
-e2e_report.xml
+integration_report.xml
 
-# E2E test outputs (pytest --basetemp)
-e2e_artifacts/
+# Integration test outputs (pytest --basetemp)
+integration_artifacts/
 
 # Test Output
 output/
@@ -51,3 +51,12 @@ data/video.mp4
 .vscode/
 .codex/*
 !.codex/skills
+
+# Container E2E suite outputs (tests/e2e/run_e2e.py).
+tests/e2e/output/
+tests/e2e/ci-results/
+tests/e2e/ci-images.json
+tests/e2e/image-manifests/
+tests/e2e/reuse-images.json
+
+.workflow-runner.*/

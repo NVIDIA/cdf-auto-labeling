@@ -56,20 +56,26 @@ Stage references: [super-resolution](references/stages/super-resolution.md),
 
 1. Confirm the critical run inputs with the user before doing anything else, and
    ask a concise question whenever one is missing or ambiguous - never guess or
-   silently invent a default. At minimum confirm: input data path, output path,
+   silently invent a default. Confirm only inputs required by the selected stages: input data path, output path,
    VLM/LLM endpoint URLs and model names, model cache path, GPU ids, and (for
    reasoning-capable models) the `max_tokens` cap. Restate the confirmed values
-   back to the user before the first execution.
-2. Verify the environment: repository cloned, `make` targets available, the
-   model cache path exists, the VLM/LLM endpoints are reachable, and a GPU is
-   available. State any missing prerequisite as a blocker instead of assuming it.
+   back to the user before the first execution. Ask once for missing required
+   inputs and pause dependent work until supplied; if unavailable, report the
+   blocker rather than repeatedly asking or inventing values.
+2. Read [Container execution](#container-execution) for host requirements,
+   image preparation, mounts, and environment forwarding. Verify the environment:
+   repository cloned, `make` targets available, the
+   required model cache exists, required endpoints are reachable, and a GPU is
+   available only when the selected stages or video decoder require one.
+   If a required prerequisite is unavailable, report it and stop the run until
+   resolved; do not silently continue with a degraded environment.
    If the stage images are not present locally, offer to pull the prebuilt
    images from NGC with `make pull` instead of building them. Use
    [ngc-containers](references/ngc-containers.md).
 3. Run a shipped example first to confirm the stack works end to end before
    customizing. Pick the closest operator pipeline - video data augmentation,
    event-and-person-attribute-search, or event-verification-reasoning - and
-   run its committed cookbook. Use the matching operator reference.
+   run a configured local copy of its cookbook. Use the matching operator reference.
 4. Plan the target scenario: define modality, domain, intended consumer, and
    required annotations, and get a minimal stage subset. Use
    [scenario-planning](references/scenario-planning.md).
@@ -81,12 +87,36 @@ Stage references: [super-resolution](references/stages/super-resolution.md),
    prompts, endpoints, windowing, `max_tokens`). Use the relevant stage
    reference, starting with
    [detection-and-tracking](references/stages/detection-and-tracking.md).
-8. Dry-run the adapted cookbook, then execute and validate the outputs. Use
+8. Follow [Container execution](#container-execution) to dry-run, execute, and
+   validate. For failure diagnosis, use
    [workflow-runner-debugging](references/workflow-runner-debugging.md).
 
 Adopting an existing external annotation or dataset-generation repository into
 CDF instead of starting from a shipped cookbook is a migration task; use
 [pipeline-migration](references/pipeline-migration.md) for that path.
+
+## Container execution
+
+`make run` launches Docker containers; no host Python or `.venv` is needed.
+A dry-run starts the runner container, but no annotation-stage containers, and
+does not verify inference. Pull or build images before running; automatic build
+flags belong to the optional host source CLI. `make build` needs host Python;
+direct Docker builds do not. For external paths, GPU access for direct service
+runs, and environment forwarding, follow the
+[launcher guide](../../docs/user-guide/operations-workflow-runner.md#container-launcher-mounts).
+Use a configured `*.local.yaml` copy of a shipped cookbook. Never commit secrets
+or machine-specific home paths; pass credential names through the environment.
+
+```bash
+CONFIG=path/to/cookbook.local.yaml
+make run ARGS="--cookbook-file ${CONFIG} --container-dry-run"
+```
+
+Inspect stage order, inputs, output paths, mounts, and endpoints. If the dry-run
+fails, correct the identified cause and retry at most three times; stop and
+report any unresolved blocker. Once preflight passes and execution is authorized,
+run the same command without `--container-dry-run`, then check the expected
+artifacts. A dry-run alone is never evidence of successful inference.
 
 ## Examples
 
@@ -95,27 +125,17 @@ How do I produce auto-labels for my domain?"
 
 Guided path:
 
-- Confirm env (model cache, VLM/LLM endpoints, GPU), then prove the stack on a
-  shipped example before customizing:
-
-```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml --container-dry-run'
-```
+- Confirm the required environment, then use [Container execution](#container-execution)
+  to validate a configured local copy of the closest shipped cookbook.
 
 - Plan the domain ([scenario-planning](references/scenario-planning.md)) -> subset
   `detection_and_tracking -> captioning -> visual_qa -> reasoning -> training_export`
   (add `grounding_2d` for caption→boxes or `referring_expressions` for boxes→phrases;
   use [grounding-2d](references/stages/grounding-2d.md) /
   [referring-expressions](references/stages/referring-expressions.md)).
-- Copy the closest cookbook to `cookbooks/warehouse_safety/configs/pipeline.yaml`
+- Copy the closest cookbook to `cookbooks/warehouse_safety/configs/pipeline.local.yaml`
   and adapt inputs, detector classes/SAM3 prompts, prompts, and question banks.
-- Dry-run the new cookbook, then run for real and validate outputs:
-
-```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/warehouse_safety/configs/pipeline.yaml --container-dry-run'
-```
+- Follow [Container execution](#container-execution) for the adapted cookbook.
 
 ## Guardrails
 

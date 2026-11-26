@@ -140,11 +140,7 @@ def emit_visual_qa_daft_outputs(
         log.debug("[visual_qa] visual QA items sidecar is empty; skipping DAFT task pivot")
         return ()
 
-    try:
-        mcq_payload, bcq_payload, open_qa_payload = to_daft_tasks(items, ctx=ctx)
-    except DaftConvertError as exc:
-        log.warning("[visual_qa] task conversion failed: %s (skipping)", exc)
-        return ()
+    mcq_payload, bcq_payload, open_qa_payload = to_daft_tasks(items, ctx=ctx)
 
     writer = DaftSceneWriter(paths.scene_dir)
     outputs = (

@@ -132,7 +132,31 @@ This skill supplies only the `visual_qa` config above. Inspecting the generated
 Docker command (dry-run) and running the pipeline are the operator skill's
 responsibility; this skill does not invoke `workflow-runner`.
 
+## Video payload mode and Cosmos
+
+The current CLI default is `--media-mode auto`: it tries video clips and can
+fall back to sampled images. For Cosmos video experiments, explicitly pass
+`--media-mode video` (in `stage_args` when using a cookbook) to keep the
+request on the video path and expose failures instead of switching to images.
+The OpenAI-compatible client serializes video as a `video_url` content item
+with a video data URL; `video_url` is a payload field, not an endpoint URL.
+Use the configured API base URL, such as
+`https://inference-api.nvidia.com/v1`.
+
+`--media-mode frames` sends sampled `image_url` items. An endpoint's image-count
+cap is not evidence of its video limit or the model's intrinsic capacity.
+Verify limits for the deployed endpoint; do not hard-code an eight-frame or
+16 MB limit as a universal Cosmos requirement. Explicit video mode does not
+change window selection or guarantee how many frames the server processes.
+
 ## Gotchas
+
+- Zero items can be a valid `{"items": []}` response, conditional questions, or
+  rejected answers. Inspect raw windows and bank conditions before diagnosing
+  malformed JSON. `--constrained-json` is for compatible OpenAI endpoints; it
+  does not guarantee complete or correct answers. The bank owns normalized
+  question text and options. See the
+  [Visual QA guide](../../../../docs/user-guide/services/visual-qa.md).
 
 - Writing the question bank is a separate prompt-authoring task; this stage only
   consumes the bank.

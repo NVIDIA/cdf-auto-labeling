@@ -77,9 +77,9 @@ Visual QA, detect people, copy crops, or synthesize tracks.
 
 ## Guardrails
 
-- Always inspect a dry-run before execution.
-- Require explicit approval before Docker execution or image builds.
-- Forward credential names such as `NVIDIA_API_KEY`, never secret values.
+Follow [Container execution](../SKILL.md#container-execution) for shared run and
+credential guardrails.
+
 - Do not collapse explicit producer nodes into PAS configuration and do not add
   `image_pas`, composite producer, or overwrite/reuse settings to the service.
   The absence of an `image_pas` block does not remove the privacy obligations for

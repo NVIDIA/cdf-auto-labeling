@@ -27,21 +27,28 @@ class _FakeCv2:
         return frame[:, :, ::-1]
 
 
-def test_decode_video_bgr_uses_core_decode_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("with_timestamps", [False, True])
+def test_decode_video_bgr_uses_core_decode_plan(
+    monkeypatch: pytest.MonkeyPatch, with_timestamps: bool
+) -> None:
     stream = VideoStreamInfo(codec_name="vp9", width=2, height=1, fps=24.0)
     plan = VideoDecodePlan(stream=stream, decoder_name="vp9")
     payload = bytes([1, 2, 3, 4, 5, 6])
     monkeypatch.setattr(media, "prepare_video_decode", lambda _path: plan)
-    monkeypatch.setattr(
-        media,
-        "iter_decoded_rgb24_frames",
-        lambda _path, _plan: iter([payload]),
-    )
 
-    decoded = decode_video_bgr(Path("clip.webm"), cv2=_FakeCv2(), np=np)
+    def decode(_path: Path, _plan: VideoDecodePlan, **kwargs: Any) -> Any:
+        if with_timestamps:
+            kwargs["timestamps"].append(1.7)
+        yield payload
+
+    monkeypatch.setattr(media, "iter_decoded_rgb24_frames", decode)
+    decoded = decode_video_bgr(
+        Path("clip.webm"), cv2=_FakeCv2(), np=np, with_timestamps=with_timestamps
+    )
 
     assert decoded.stream is stream
     assert list(decoded.frames)[0].tolist() == [[[3, 2, 1], [6, 5, 4]]]
+    assert decoded.timestamps == ([1.7] if with_timestamps else [])
 
 
 def test_iter_selected_video_frames_bgr_skips_and_stops(

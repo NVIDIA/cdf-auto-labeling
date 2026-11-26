@@ -5,6 +5,23 @@ All notable changes to this repository should be recorded here.
 The version number below reflects the current workspace version declared in
 `pyproject.toml`.
 
+## [Unreleased] — Runtime reliability and detector extensibility
+
+- Add opt-in question-bank JSON schemas to Visual QA requests.
+- Initialize MSC only on remote use; keep local-only paths usable without MSC.
+- Add missing FFmpeg tool instructions and bounded video fallback diagnostics.
+- Keep MSC excluded from native Windows dependency resolution.
+- Discover external trackers through the cdf.trackers entry-point group.
+- Export RF-DETR confidence and timing fields required by crop gates.
+- Report crop rejection counts and missing artifact fields.
+
+## [Unreleased] — Container-first onboarding
+
+- Use `make run` for container workflows and direct service commands and include the Docker CLI in the runner image.
+- Document customer container execution separately from source development.
+- Use the same container workflow for users and developers; keep the source environment separate from container execution.
+- Make the SeedVR2 service stack an optional extra.
+
 ## [1.1.0] - 2026-08-15
 
 Auto-Labeling supersedes the legacy `pseudo-labeling` repository

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import runpy
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -881,3 +882,47 @@ def test_module_entrypoint_exits_with_main_status() -> None:
         runpy.run_path(str(build_path), run_name="__main__")
 
     assert exit_info.value.code == 0
+
+
+def _git_repo(root: Path) -> None:
+    import subprocess as sp  # noqa: PLC0415 - real git, not the patched module attribute
+
+    sp.Popen(["git", "init", "-q", str(root)]).wait()
+    (root / "packages").mkdir()
+    (root / "packages" / "a.py").write_text("x = 1\n")
+    (root / "e2e").mkdir()
+    (root / "e2e" / "notes.md").write_text("not image source\n")
+
+
+def test_source_digest_is_none_without_git(tmp_path: Path) -> None:
+    from build import source_digest  # noqa: PLC0415
+
+    with patch("build.shutil.which", return_value=None):
+        assert source_digest(tmp_path) is None
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs the git binary")
+def test_source_digest_tracks_image_source_including_uncommitted_edits(tmp_path: Path) -> None:
+    from build import source_digest  # noqa: PLC0415
+
+    assert source_digest(tmp_path) is None  # not a git checkout
+    _git_repo(tmp_path)
+    first = source_digest(tmp_path)
+    assert first is not None
+    (tmp_path / "e2e" / "notes.md").write_text("changed, but not copied into images\n")
+    assert source_digest(tmp_path) == first
+    (tmp_path / "packages" / "a.py").write_text("x = 2\n")
+    assert source_digest(tmp_path) != first
+
+
+def test_execute_build_labels_the_image_with_the_source_digest(tmp_path: Path) -> None:
+    image = _buildx_image(tmp_path)
+    with (
+        patch("build.source_digest", return_value="abc123"),
+        patch("build.REPO_ROOT", tmp_path),
+        patch("subprocess.run") as mock_run,
+    ):
+        mock_run.return_value.returncode = 0
+        execute_build(image)
+    command = mock_run.call_args[0][0]
+    assert command[command.index("--label") + 1] == "upa.source-digest=abc123"

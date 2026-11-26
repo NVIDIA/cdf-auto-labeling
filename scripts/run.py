@@ -22,6 +22,7 @@ cross-package name collisions.
 
 from __future__ import annotations
 
+import importlib
 import os
 import shlex
 import subprocess
@@ -30,7 +31,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-import questionary
+import build as image_build
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ROOT_PYPROJECT = REPO_ROOT / "pyproject.toml"
@@ -281,6 +282,7 @@ def choose_runnable(
             f"Pass `project:script` before `--`. Available targets: {available}."
         )
 
+    questionary = importlib.import_module("questionary")
     selection = questionary.select(
         "Select a package script to run:",
         choices=[
@@ -327,6 +329,7 @@ def resolve_script_args(runnable: Runnable, script_args: list[str]) -> list[str]
     if not sys.stdin.isatty():
         return shlex.split(default_args.args)
 
+    questionary = importlib.import_module("questionary")
     if len(runnable.default_args) > 1:
         selection = questionary.select(
             "Select args:",
@@ -496,6 +499,27 @@ def execute_runnable(runnable: Runnable, script_args: list[str]) -> int:
     return subprocess.run(command, cwd=REPO_ROOT, check=False, env=env).returncode
 
 
+def container_image(target: str) -> str:
+    """Resolve a service's registered image using the workflow's existing defaults."""
+    runnable = choose_runnable(discover_runnables(), target)
+    if runnable.script_name != "main":
+        raise ValueError(f"Container execution requires a main entrypoint: {target}")
+    defaults = importlib.import_module("workflow_runner.container_runner").DEFAULT_BUILD_TARGETS
+    images = [
+        image
+        for image in image_build.discover_buildable_images()
+        if image.project_name == runnable.project_name
+    ]
+    preferred = [image for image in images if image.target in defaults.values()]
+    candidates = preferred or images
+    if len(candidates) != 1:
+        raise ValueError(f"No unambiguous container image registered for {target}")
+    tag = image_build._find_build_tag(shlex.split(candidates[0].command))
+    if not isinstance(tag, str) or not tag:
+        raise ValueError(f"No image tag registered for {target}")
+    return tag
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the workspace script selection and dispatch flow.
 
@@ -510,7 +534,13 @@ def main(argv: list[str] | None = None) -> int:
     """
 
     try:
-        requested_script, script_args = parse_args(argv or sys.argv[1:])
+        args = argv if argv is not None else sys.argv[1:]
+        if args[:1] == ["--container-image"]:
+            if len(args) != 2:
+                raise ValueError("--container-image requires one project:script target")
+            print(container_image(args[1]))
+            return 0
+        requested_script, script_args = parse_args(args)
         runnables = discover_runnables()
         if not runnables:
             raise ValueError("No runnable scripts were found in the workspace.")

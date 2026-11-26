@@ -34,17 +34,18 @@ cookbooks; `stage_args` remains accepted only for compatibility.
 The runner maps cookbook sections to canonical container stages:
 
 ```text
-video: super_resolution -> detection_and_tracking -> captioning -> grounding_2d ->
-       referring_expressions -> visual_qa -> reasoning -> training_export ->
+video: super_resolution -> detection_and_tracking -> referring_expressions ->
+       captioning -> visual_qa -> reasoning -> training_export ->
        person_attribute_search
-image: detection_and_tracking -> captioning -> grounding_2d ->
-       referring_expressions -> visual_qa -> reasoning -> training_export ->
+image: detection_and_tracking -> referring_expressions -> captioning ->
+       grounding_2d -> visual_qa -> reasoning -> training_export ->
        person_attribute_search
 ```
 
-`grounding_2d` and `referring_expressions` may be absent until their MRs merge;
-verify the local runner stage list. Plain `stages:` selections execute in this
-fixed relative order. A `workflow.nodes` recipe instead executes in stable
+These orders come from `workflow_runner.container_runner._canonical_stage_order`.
+`grounding_2d` is image-only. Plain `stages:` selections execute in this fixed
+relative order. Defaults are `super_resolution -> detection_and_tracking ->
+captioning -> reasoning` for video and `captioning -> reasoning` for images. A `workflow.nodes` recipe instead executes in stable
 topological node order. Nodes may repeat a stage; keep their IDs and output
 namespaces distinct. If neither form is present, optional per-stage `enabled:`
 flags adjust the default sequence.
@@ -138,7 +139,7 @@ list. A list such as `[0]` is stringified to `"[0]"` and is not a valid device
 selector.
 
 Container runtime flags that are not cookbook-specific stay on the runner CLI,
-for example `--container-dry-run`, `--container-build-images`,
+for example `--container-dry-run`,
 `--container-mount`, and `--container-env`.
 
 ## Container Environment

@@ -3,7 +3,7 @@
 The CDF runner composes supported stages into a pipeline. The agent selects a
 subset of the canonical stages; the runner builds and executes Docker commands.
 There is no single fixed pipeline: each cookbook picks the stages it needs, run
-in their fixed relative order.
+in canonical order for `stages:` or dependency order for `workflow.nodes`.
 
 - [Supported Stage Names](#supported-stage-names)
 - [Common Pipelines](#common-pipelines)
@@ -14,40 +14,19 @@ in their fixed relative order.
 
 ## Supported Stage Names
 
-The canonical stages, in fixed relative order, are:
+Use the [runner stage model](../cookbook-authoring/cookbook-schema.md#runner-stage-model)
+for canonical stage order and defaults. Plain `stages:` uses that order;
+`workflow.nodes` uses dependency order. Verify the current checkout before execution.
 
-```text
-super_resolution
-detection_and_tracking
-referring_expressions
-captioning
-grounding_2d
-visual_qa
-reasoning
-training_export
-person_attribute_search
-```
-
-Branch note: `grounding_2d` and `referring_expressions` may land on separate MRs.
-Verify the current checkout's `workflow_runner` stage list before composing both
-in one cookbook. Typical product subsets:
-
-- Caption → boxes: `captioning` → `grounding_2d`
-- Boxes → phrases: `detection_and_tracking` → `referring_expressions`
-  (or `referring_expressions` alone when `contextual/objects.json` exists)
-
-The image pipeline default subset remains `captioning -> visual_qa -> reasoning ->
-training_export`. Include `person_attribute_search` only when
-`detection_and_tracking` has already run (PAS requires per-track crops). The single
-`daft_export` stage is
-retired: DAFT `task/` writing belongs to `reasoning`, and dataset aggregation
-belongs to `training_export`. `person_attribute_search` is the stage key for the
-Visual Attribute Search product (service image/build target
-`event-and-person-attribute-search-service`); it requires `detection_and_tracking`
-first for per-track attributes.
-
-Verify current branch support before execution because some services may be
-pending in separate MRs.
+- Caption → boxes: `captioning` → `grounding_2d` (image-only).
+- Boxes → phrases: `detection_and_tracking` → `referring_expressions`, or
+  `referring_expressions` alone with existing `contextual/objects.json`.
+- PAS consumes explicit attribute JSON or upstream attribute sidecars. Tracking
+  alone does not produce that evidence. Attribute-only and multi-view image
+  cookbooks do not require tracking; see the
+  [PAS cookbook matrix](../event-and-person-attribute-search/run-reference.md#cookbook-matrix).
+- The retired `daft_export` stage is replaced by per-task DAFT output and
+  `reasoning`; dataset aggregation belongs to `training_export`.
 
 ## Common Pipelines
 
@@ -93,12 +72,15 @@ stages:
   - training_export
 ```
 
-Visual Attribute Search (per-track person attributes), as shipped by the
-`visual_attribute_search` cookbook:
+Visual Attribute Search over video needs explicit attribute-producing nodes.
+Use the shipped `pipeline_video_epas.yaml` with its captioning and per-track QA
+settings; the stage subset is:
 
 ```yaml
 stages:
   - detection_and_tracking
+  - captioning
+  - visual_qa
   - person_attribute_search
 ```
 
@@ -171,8 +153,8 @@ Additional shipped example cookbooks include `event_verification_reasoning`
   artifacts or need evidence-first verdicts.
 - Use `training_export` when per-scene outputs should be aggregated into a
   training/export dataset.
-- Use `person_attribute_search` (after `detection_and_tracking`) for the Visual
-  Attribute Search product's per-track attribute labels.
+- Use `person_attribute_search` after its attribute evidence producers, or with
+  explicit attribute JSON. Choose the matching PAS cookbook contract.
 
 ## Data Flow Contract
 
@@ -210,12 +192,6 @@ Before proposing a custom combination, check:
 
 ## Dry-Run First
 
-Always inspect a dry-run before execution:
-
-```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file <config> --container-dry-run'
-```
-
-Only run for real after the dry-run confirms the stage order and data-flow
-assumptions.
+Follow the shared [Container execution](../../SKILL.md#container-execution)
+procedure and guardrails. Confirm the planned stage order and data-flow assumptions
+before executing.

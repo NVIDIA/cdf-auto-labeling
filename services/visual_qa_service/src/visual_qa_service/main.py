@@ -151,10 +151,25 @@ class VisualQaService(ServiceInterface):
             help="Ask generated QA evidence to include reasoning_trace fields.",
         )
         parser.add_argument(
+            "--constrained-json",
+            action="store_true",
+            help=(
+                "Constrain QA answers with a JSON schema built from the question bank "
+                "(response_format json_schema). Use with small or local VLMs; the "
+                "OpenAI-compatible endpoint must support json_schema (vLLM, NIM)."
+            ),
+        )
+        parser.add_argument(
             "--window-seconds",
             type=float,
             default=10.0,
             help="Video window duration in seconds when --window-frames is 0.",
+        )
+        parser.add_argument(
+            "--min-tail-seconds",
+            type=float,
+            default=0.0,
+            help="Skip a shorter final partial window in seconds mode; retain short whole clips.",
         )
         parser.add_argument(
             "--window-frames",
@@ -363,9 +378,11 @@ def build_config(args: argparse.Namespace) -> VisualQaConfig:
         prompt_file=args.prompt_file,
         system_prompt=args.system_prompt,
         include_reasoning=bool(args.include_reasoning),
+        constrained_json=bool(args.constrained_json),
         window_seconds=args.window_seconds,
         window_frames=args.window_frames,
         remainder_threshold=args.remainder_threshold,
+        min_tail_seconds=getattr(args, "min_tail_seconds", 0.0),
         single_window=bool(args.single_window),
         sampling_fps=args.sampling_fps,
         max_frames=args.max_frames,

@@ -10,7 +10,7 @@ sequentially. It is not a general-purpose orchestrator: scheduling,
 distributed execution, worker queues, retry policy, and resource placement
 belong to platform tooling such as OSMO or Airflow.
 
-The runner does not import task packages directly; each stage runs in its own
+Each annotation stage executes in its own
 service container against the same `DataEntry` JSONL manifest and shared scene
 directory. The repository-level `scripts/run.py` and `scripts/build.py`
 entrypoints still own local script launching and stage Docker image discovery
@@ -56,8 +56,8 @@ The default image and build target names match the stage-service packages:
 
 `reasoning` replaces the former `daft_export` stage: on `main`, DAFT export was
 folded into per-task DAFT validation plus the `reasoning` service. The legacy
-name `daft_export` is still accepted in `--stages` and cookbook sections as an
-alias for `reasoning`, so older configs keep working.
+name `daft_export` is still accepted in cookbook sections as an alias for
+`reasoning`. Use `reasoning` with the CLI `--stages` option.
 
 `person_attribute_search` is an opt-in PAS assembly stage. It consumes an
 explicit attribute JSON or sidecars produced by explicit captioning, Visual QA,
@@ -68,17 +68,17 @@ those upstream artifacts.
 
 ## Prerequisites
 
-- Run commands from the repository root so the workflow runner can resolve
-  workspace package metadata. Build its image with
-  `make build IMAGE=workflow-runner:workflow-runner` when a containerized runner
-  is required.
-- Install Docker or Podman. GPU runs require a runtime that supports `--gpus`
-  such as Docker with NVIDIA container toolkit.
-- Install `make` and sync the repo dependencies before invoking the runner.
-- Ensure any required container registry credentials, GPU access, and endpoint
-  environment variables are available to the shell that launches `make run`.
-  Pass endpoint-key variable names with `--container-env`, or declare them in a
-  cookbook `container.env` block, so stage containers receive them.
+For the containerized launcher, use Linux, Docker, and GNU Make; no host
+Python environment is required. Follow [Installation](../../docs/user-guide/installation.md)
+and [container mounts](../../docs/user-guide/operations-workflow-runner.md#container-launcher-mounts).
+
+```bash
+make run ARGS='--help'
+```
+
+All examples below run the workflow container. Build or pull images before
+running; source-build flags such as `--container-build-images` belong to the
+optional source CLI, not the runtime image.
 
 ### Model endpoints and secrets
 
@@ -92,8 +92,8 @@ clients use `NVIDIA_API_KEY`; Gemini clients use `GEMINI_API_KEY`. Pass only the
 environment-variable name:
 
 ```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file <cookbook.local.yaml> \
+make run \
+  ARGS='--cookbook-file path/to/cookbook.local.yaml \
         --container-env NVIDIA_API_KEY'
 ```
 
@@ -105,35 +105,36 @@ passed. Never put secret values in a cookbook, payload, or command line.
 Inspect the generated container commands:
 
 ```bash
-make run SCRIPT=workflow-runner:main
-make run SCRIPT=workflow-runner:main \
+make run
+make run \
   ARGS='--input-file payloads/simple.jsonl --container-dry-run'
 ```
 
-`make run SCRIPT=workflow-runner:main` offers presets for a checked-in
-`payloads/simple.jsonl` dry run, the default video cookbook dry run, and help.
+`make run` displays help when no arguments are supplied.
 
 Run the default video pipeline:
 
 ```bash
-make run SCRIPT=workflow-runner:main \
+make run \
   ARGS='--pipeline video --input-file payloads/simple.jsonl'
 ```
 
-Run the default image pipeline:
+Run the default image pipeline with a manifest containing image `media_path`
+values and writable scene `data_path` values (see
+[the manifest example](../../docs/user-guide/experiment-output-layout.md#how-to-run-a-manual-experiment)):
 
 ```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--pipeline image --input-file payloads/simple.jsonl'
+make run \
+  ARGS='--pipeline image --input-file path/to/images.jsonl'
 ```
 
 Include visual QA before reasoning:
 
 ```bash
-make run SCRIPT=workflow-runner:main \
+make run \
   ARGS='--input-file payloads/simple.jsonl \
         --stages detection_and_tracking captioning visual_qa reasoning \
-        --question-bank-file /path/to/question_bank.json'
+        --question-bank-file cookbooks/visual_attribute_search/question_bank.anomaly_tags.json'
 ```
 
 ## Cookbooks
@@ -153,12 +154,13 @@ cookbooks/<scenario>/
   question_bank.json
 ```
 
-Use a cookbook directly:
+Copy a cookbook to `*.local.yaml`, configure its paths and endpoints, and stage
+its input media before running:
 
 ```bash
-CONFIG=cookbooks/video_data_augmentation/configs/pipeline_video.yaml
+CONFIG=cookbooks/video_data_augmentation/configs/pipeline_video.local.yaml
 ARGS="--cookbook-file ${CONFIG} --container-dry-run" \
-  make run SCRIPT=workflow-runner:main
+  make run
 ```
 
 The checked-in cookbooks use repo-root-style sample paths such as
@@ -211,6 +213,8 @@ stage and may add an `args` list:
 ```yaml
 workflow:
   nodes:
+    captions:
+      stage: captioning
     anomaly_qa:
       stage: visual_qa
       needs: [captions]
@@ -295,12 +299,12 @@ for every config.
 
 Training exports run as their own `training-export-service` stage/container.
 When export formats are configured and `--stages` is not explicitly set, the
-workflow runner appends this stage after reasoning. The source scene is the
+workflow runner adds this as a terminal stage. The source scene is the
 per-entry `data_path` directory containing `raw/`, `contextual/`, `task/`, and
 `sidecars/`.
 
 ```bash
-make run SCRIPT=workflow-runner:main \
+make run \
   ARGS='--input-file payloads/simple.jsonl \
         --training-export-format cosmos-reason-v1.0 \
         --training-export-format tao-vl-reason-v1.0 \
@@ -347,7 +351,7 @@ current `uid:gid` automatically.
 
 ### Rootless env is automatic
 
-Whenever the runner runs as a non-root user, it auto-injects the environment
+When a non-root stage user is configured, the runner auto-injects the environment
 variables that rootless containers need (`USER`, `HOME`, `HF_HOME`,
 `XDG_CACHE_HOME`, `TORCHINDUCTOR_CACHE_DIR`), so callers no longer list them by
 hand. Any value you pass via `--container-env` (or a cookbook `container.env`)
@@ -355,8 +359,9 @@ takes precedence over the injected default of the same name.
 
 ### Cookbook `container:` block
 
-A cookbook can declare its container wiring once so a run only needs
-`--cookbook-file`:
+A cookbook declares stage container wiring. External paths and custom host
+variables must also be passed into the runner using the
+[launcher mounts and environment](../../docs/user-guide/operations-workflow-runner.md#container-launcher-mounts):
 
 ```yaml
 container:
@@ -374,11 +379,8 @@ are additive (cookbook first, CLI last so CLI wins on conflicts).
 
 ## Useful Options
 
-- `--container-dry-run` logs commands without launching containers.
-- `--container-build-images` builds enabled stage images before running.
-- `--container-ensure-images` builds only enabled stage images that are missing
-  (existing images are left untouched; ignored when `--container-build-images`
-  is set).
+- `--container-dry-run` logs commands without launching annotation-stage containers.
+  The runner container itself still starts.
 - `--container-mount HOST[:CONTAINER[:ro|rw]]` adds a bind mount.
 - `--container-env NAME` passes an environment variable through.
 - `--container-user UID:GID` runs each stage container as the same user

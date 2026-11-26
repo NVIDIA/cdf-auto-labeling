@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import tempfile
 from collections.abc import Iterable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -24,6 +26,12 @@ _CODEC_NAME_ALIASES = {
     "h264_cuvid": "h264",
     "vp9_cuvid": "vp9",
 }
+
+# Shown when a host run cannot find the FFmpeg CLI tools (containers ship their own).
+FFMPEG_INSTALL_HINT = (
+    "Install ffmpeg, which provides ffmpeg and ffprobe, and make sure it is on PATH "
+    "(Ubuntu: apt-get install ffmpeg; macOS: brew install ffmpeg)."
+)
 
 # Maximum time to wait for FFmpeg to exit after its decoded-frame stream reaches EOF.
 DECODE_TIMEOUT_SECS = 60
@@ -84,6 +92,8 @@ def probe_video_stream(path: Path | str) -> VideoStreamInfo:
             text=True,
             timeout=30,
         )
+    except FileNotFoundError as exc:
+        raise VideoDecodeError(_missing_tool_message("ffprobe")) from exc
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise VideoDecodeError(f"Could not probe video stream {path}: {exc}") from exc
     if result.returncode != 0:
@@ -157,53 +167,82 @@ def prepare_video_decode(path: Path | str) -> VideoDecodePlan:
 def iter_decoded_rgb24_frames(
     path: Path | str,
     plan: VideoDecodePlan,
+    *,
+    timestamps: list[float | None] | None = None,
 ) -> Iterable[bytes]:
-    """Yield exact RGB24 frame payloads from the selected FFmpeg decoder."""
-    command = _decode_command(path, plan.decoder_name, frame_limit=None)
-    frame_bytes = plan.stream.width * plan.stream.height * 3
-    stderr_file = tempfile.TemporaryFile()
-    try:
-        process = subprocess.Popen(  # noqa: S603
-            command,
-            stdout=subprocess.PIPE,
-            stderr=stderr_file,
-        )
-    except OSError as exc:
-        stderr_file.close()
-        raise VideoDecodeError(
-            f"Could not start FFmpeg decoder {plan.decoder_name!r}: {exc}"
-        ) from exc
-    if process.stdout is None:
-        process.kill()
-        process.wait()
-        stderr_file.close()
-        raise VideoDecodeError("FFmpeg decoder did not expose a stdout frame stream.")
-
-    try:
-        while True:
-            payload = _read_exact(process.stdout, frame_bytes)
-            if not payload:
-                break
-            if len(payload) != frame_bytes:
-                raise VideoDecodeError(
-                    f"FFmpeg returned a partial RGB frame ({len(payload)}/{frame_bytes} bytes)."
-                )
-            yield payload
+    """Yield RGB24 frames, optionally appending each input presentation time before yielding."""
+    with ExitStack() as stack:
+        command = _decode_command(path, plan.decoder_name, frame_limit=None)
+        timestamp_file = None
+        if timestamps is not None:
+            directory = stack.enter_context(tempfile.TemporaryDirectory(prefix="decode_pts_"))
+            timestamp_path = Path(directory) / "frames.txt"
+            timestamp_file = stack.enter_context(timestamp_path.open("w+", encoding="utf-8"))
+            command[-1:-1] = [
+                "-fps_mode",
+                "passthrough",
+                "-stats_enc_pre",
+                str(timestamp_path),
+                "-stats_enc_pre_fmt",
+                "{ti}",
+            ]
+        frame_bytes = plan.stream.width * plan.stream.height * 3
+        stderr_file = tempfile.TemporaryFile()
+        try:
+            process = subprocess.Popen(  # noqa: S603
+                command,
+                stdout=subprocess.PIPE,
+                stderr=stderr_file,
+            )
+        except FileNotFoundError as exc:
+            stderr_file.close()
+            raise VideoDecodeError(_missing_tool_message("ffmpeg")) from exc
+        except OSError as exc:
+            stderr_file.close()
+            raise VideoDecodeError(
+                f"Could not start FFmpeg decoder {plan.decoder_name!r}: {exc}"
+            ) from exc
+        if process.stdout is None:
+            process.kill()
+            process.wait()
+            stderr_file.close()
+            raise VideoDecodeError("FFmpeg decoder did not expose a stdout frame stream.")
 
         try:
-            return_code = process.wait(timeout=DECODE_TIMEOUT_SECS)
-        except subprocess.TimeoutExpired as exc:
-            _terminate_and_reap(process)
-            raise VideoDecodeError(
-                _decode_timeout_message(path, plan.decoder_name, stderr_file)
-            ) from exc
-        if return_code != 0:
-            raise VideoDecodeError(_decode_failure_message(path, plan.decoder_name, stderr_file))
-    finally:
-        process.stdout.close()
-        if process.poll() is None:
-            _terminate_and_reap(process)
-        stderr_file.close()
+            while True:
+                payload = _read_exact(process.stdout, frame_bytes)
+                if not payload:
+                    break
+                if len(payload) != frame_bytes:
+                    raise VideoDecodeError(
+                        f"FFmpeg returned a partial RGB frame ({len(payload)}/{frame_bytes} bytes)."
+                    )
+                if timestamp_file is not None and timestamps is not None:
+                    try:
+                        time_s = float(timestamp_file.readline().strip())
+                    except ValueError as exc:
+                        raise VideoDecodeError(
+                            "Missing or invalid decoded-frame timestamp"
+                        ) from exc
+                    timestamps.append(time_s if math.isfinite(time_s) else None)
+                yield payload
+
+            try:
+                return_code = process.wait(timeout=DECODE_TIMEOUT_SECS)
+            except subprocess.TimeoutExpired as exc:
+                _terminate_and_reap(process)
+                raise VideoDecodeError(
+                    _decode_timeout_message(path, plan.decoder_name, stderr_file)
+                ) from exc
+            if return_code != 0:
+                raise VideoDecodeError(
+                    _decode_failure_message(path, plan.decoder_name, stderr_file)
+                )
+        finally:
+            process.stdout.close()
+            if process.poll() is None:
+                _terminate_and_reap(process)
+            stderr_file.close()
 
 
 def _parse_frame_rate(value: object) -> float | None:
@@ -240,6 +279,9 @@ def _decoder_works(path: Path | str, stream: VideoStreamInfo, decoder_name: str)
             capture_output=True,
             timeout=60,
         )
+    except FileNotFoundError as exc:
+        # Without this, a missing ffmpeg reads as "no working decoder" (e.g. "GPU required").
+        raise VideoDecodeError(_missing_tool_message("ffmpeg")) from exc
     except (OSError, subprocess.TimeoutExpired):
         return False
     expected_bytes = stream.width * stream.height * 3
@@ -298,6 +340,11 @@ def _decode_timeout_message(path: Path | str, decoder_name: str, stderr_file: An
     return f"FFmpeg decoder {decoder_name!r} timed out decoding {path}{suffix}"
 
 
+def _missing_tool_message(tool: str) -> str:
+    """Explain how to install the missing FFmpeg command-line tool."""
+    return f"{tool} not found. {FFMPEG_INSTALL_HINT}"
+
+
 def _decode_stderr_detail(stderr_file: Any) -> str:
     stderr_file.seek(0)
     return str(stderr_file.read().decode("utf-8", errors="replace").strip())
@@ -323,6 +370,7 @@ def _terminate_and_reap(process: subprocess.Popen[bytes]) -> None:
 
 __all__ = [
     "DECODE_TIMEOUT_SECS",
+    "FFMPEG_INSTALL_HINT",
     "H264_GPU_REQUIRED_MESSAGE",
     "UnsupportedVideoCodecError",
     "VideoDecodeError",

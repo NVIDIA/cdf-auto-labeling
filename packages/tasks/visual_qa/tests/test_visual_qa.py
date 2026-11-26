@@ -2,10 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import logging
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+import visual_qa.task as task_module
 from core import DataEntry, ScenePipelineState, read_pipeline_state, write_pipeline_state
+from core.formats.daft.errors import DaftConvertError
+from core.models import update_annotation_export_state
 from visual_qa import VisualQaConfig, VisualQaTask
 from visual_qa import task as vqa_task
 from visual_qa.artifacts import VISUAL_QA_ARTIFACTS_KEY, VisualQaArtifactsState
@@ -180,7 +185,7 @@ def test_normalizes_source_metadata_and_aggregates_to_sidecar(tmp_path: Path) ->
     outcomes = {emitter.name: emitter for emitter in state.annotation_export.emitters}
     assert outcomes["mcq"].success is True
     assert outcomes["bcq"].success is True
-    assert outcomes["open_qa"].success is False
+    assert "open_qa" not in outcomes  # no open-ended items: not applicable, not a failure
 
 
 def _seed_normalize_scene(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -1454,3 +1459,311 @@ def _fenced(payload: object) -> str:
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def test_dropped_model_items_are_logged_as_a_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    media_path = tmp_path / "clip.mp4"
+    media_path.touch()
+    scene_dir = tmp_path / "clip"
+    bank_path = tmp_path / "bank.json"
+    _write_json(
+        bank_path,
+        {"questions": [{"id": "weather", "question": "Weather?", "options": ["Rain", "Sun"]}]},
+    )
+    raw_items = [{"id": "weather", "question": "Weather?", "answer": "Snow"}]  # not an option
+    _write_json(
+        scene_dir / "sidecars" / "visual_qa" / "windows.json", {"windows": [{"items": raw_items}]}
+    )
+
+    task = VisualQaTask(VisualQaConfig(question_bank_file=str(bank_path)))
+    with caplog.at_level(logging.WARNING, logger="pseudo_annotation"):
+        task.run(DataEntry(media_path=str(media_path), data_path=str(scene_dir)))
+
+    assert "Visual QA dropped 1 model item(s)" in caplog.text
+    assert "answer not in options for weather" in caplog.text
+
+
+def test_allow_empty_questions_keep_empty_answers_and_lists_survive(tmp_path: Path) -> None:
+    bank_path = tmp_path / "bank.json"
+    _write_json(
+        bank_path,
+        {
+            "questions": [
+                {"id": "carrying", "question": "Carried objects?", "allow_empty": True},
+                {"id": "accessories", "question": "Accessory tuples?", "allow_empty": True},
+                {"id": "notes", "question": "Anything else?"},
+            ]
+        },
+    )
+    bank = load_question_bank(bank_path)
+    items, errors = normalize_items(
+        [
+            {"id": "carrying", "question": "Carried objects?", "answer": ""},
+            {"id": "accessories", "question": "Accessory tuples?", "answer": []},
+            {"id": "notes", "question": "Anything else?", "answer": ""},
+        ],
+        bank=bank,
+        strict_answers=True,
+        open_ended=False,
+    )
+    answers = {item["id"]: item["answer"] for item in items}
+    assert answers == {"carrying": "none", "accessories": "[]"}
+    # Without allow_empty an empty answer is still dropped, and reported.
+    assert errors == ["item[2] skipped: empty answer for notes"]
+
+    items, _ = normalize_items(
+        [{"id": "accessories", "answer": [["carrying", "black", "backpack"]]}],
+        bank=bank,
+        strict_answers=True,
+        open_ended=False,
+    )
+    assert items[0]["answer"] == '[["carrying", "black", "backpack"]]'
+
+
+def test_missing_input_records_failed_exports(tmp_path: Path) -> None:
+    scene = tmp_path / "scene"
+    VisualQaTask(VisualQaConfig()).run(
+        DataEntry(media_path=str(tmp_path / "clip.mp4"), data_path=str(scene))
+    )
+    state = read_pipeline_state(scene)
+    assert state.annotation_export is not None
+    assert {e.name: e.success for e in state.annotation_export.emitters} == {
+        "mcq": False,
+        "bcq": False,
+        "open_qa": False,
+    }
+
+
+def test_conversion_failure_records_failed_exports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    def fail(*args: object, **kwargs: object) -> tuple[Path, ...]:
+        raise DaftConvertError("invalid task")
+
+    monkeypatch.setattr(task_module, "emit_visual_qa_daft_outputs", fail)
+    scene = tmp_path / "scene"
+    task = VisualQaTask(VisualQaConfig())
+    with pytest.raises(DaftConvertError, match="invalid task"):
+        task._emit_daft_outputs(
+            DataEntry(media_path=str(tmp_path / "clip.mp4"), data_path=str(scene)),
+            scene_ctx=task_module.SceneContext(media_id="clip"),
+            visual_qa_artifacts={},
+            success=True,
+        )
+    state = read_pipeline_state(scene)
+    assert state.annotation_export is not None
+    assert len(state.annotation_export.emitters) == 3
+    assert all(not e.success for e in state.annotation_export.emitters)
+
+
+def test_person_bank_accepts_occluded_inner_garment_without_relaxing_validation() -> None:
+    root = Path(__file__).resolve().parents[4]
+    bank = load_question_bank(
+        root / "cookbooks/visual_attribute_search/question_bank.person_attributes.json"
+    )
+    question = bank.questions["top inner type"]
+    items, errors = normalize_items(
+        [
+            {"id": question.qid, "options": list(question.options), "answer": answer}
+            for answer in ("not visible", "invented garment")
+        ],
+        bank=bank,
+        strict_answers=True,
+        open_ended=False,
+    )
+    assert [item["answer"] for item in items] == ["not visible"]
+    assert errors == ["item[1] skipped: answer not in options for top inner type"]
+
+
+@pytest.mark.parametrize(
+    "frames,minimum,count,skipped",
+    [
+        (38, 1.0, 3, True),
+        (38, 0.0, 4, False),
+        (40, 1.0, 4, False),
+        (1, 1.0, 1, False),
+        (38, 8.0, 3, True),
+        (37, 1.0, 3, False),
+    ],
+)
+def test_minimum_tail_preserves_meaningful_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    frames: int,
+    minimum: float,
+    count: int,
+    skipped: bool,
+) -> None:
+    monkeypatch.setattr(
+        task_module,
+        "probe_video",
+        lambda _: task_module.VideoInfo(fps=2.48, frame_count=frames, width=896, height=448),
+    )
+    worker = VisualQaTask(
+        VisualQaConfig(window_frames=0, window_seconds=5, min_tail_seconds=minimum)
+    )
+    log_info = Mock()
+    monkeypatch.setattr(worker.logger, "info", log_info)
+    media = Mock(return_value=([], "video", None))
+    generate = Mock(return_value=task_module._GeneratedQaWindow(description="cars", payload={}))
+    monkeypatch.setattr(worker, "_window_media_payloads", media)
+    monkeypatch.setattr(worker, "_generate_for_window", generate)
+    metadata: dict[str, object] = {}
+    windows = worker._generate_from_media(
+        media_path=tmp_path / "clip.mp4",
+        qa_prompt="Describe the scene",
+        windowing_metadata=metadata,
+    )
+    assert len(windows) == generate.call_count == media.call_count == count
+    assert all(w["input_media_mode"] == "video" for w in windows)
+    tail = metadata["skipped_tail"]
+    assert (tail is not None) == skipped
+    if skipped:
+        assert isinstance(tail, dict)
+        assert tail["start_s"] == 15.0
+        assert tail["end_s"] == pytest.approx(38 / 2.48)
+        assert tail["reason"] == "below_min_tail_seconds"
+        assert any("Skipping trailing window" in c.args[0] for c in log_info.call_args_list)
+
+
+@pytest.mark.parametrize("reasoning_succeeded", [True, False])
+def test_unwritten_flat_qa_preserves_reasoning_open_qa(
+    tmp_path: Path, reasoning_succeeded: bool
+) -> None:
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    artifact = scene / "open_qa.json"
+    artifact.write_text("{}")
+    update_annotation_export_state(
+        scene,
+        emitter_artifacts={
+            "open_qa": artifact if reasoning_succeeded else None,
+            "mcq": None,
+            "bcq": None,
+        },
+    )
+    task_module._record_daft_outputs(
+        DataEntry(media_path=str(tmp_path / "clip.mp4"), data_path=str(scene)), ()
+    )
+    export = read_pipeline_state(scene).annotation_export
+    assert export is not None
+    assert {e.name: e.success for e in export.emitters} == {"open_qa": reasoning_succeeded}
+
+
+def test_missing_input_with_flat_exports_disabled_preserves_reasoning(tmp_path: Path) -> None:
+    scene = tmp_path / "scene"
+    scene.mkdir()
+    artifact = scene / "open_qa.json"
+    artifact.write_text("{}")
+    update_annotation_export_state(scene, emitter_artifacts={"open_qa": artifact})
+    VisualQaTask(VisualQaConfig(emit_flat_qa_tasks=False)).run(
+        DataEntry(media_path=str(tmp_path / "clip.mp4"), data_path=str(scene))
+    )
+    state = read_pipeline_state(scene)
+    assert state.annotation_export is not None
+    assert {e.name: e.success for e in state.annotation_export.emitters} == {"open_qa": True}
+    assert state.task_artifacts[VISUAL_QA_ARTIFACTS_KEY]["success"] is False
+
+
+def test_exception_summary_keeps_server_message_and_truncates() -> None:
+    """Preserve short endpoint errors and bound verbose messages in logs."""
+    short = vqa_task._exception_summary(ValueError("video input not supported"))
+    long = vqa_task._exception_summary(ValueError("x" * 1000))
+
+    assert short == "ValueError: video input not supported"
+    assert len(long) == 300
+    assert long.startswith("ValueError: xxx")
+    assert long.endswith("...")
+
+
+@pytest.mark.parametrize("constrained_json", [False, True])
+def test_constrained_json_sends_question_bank_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, constrained_json: bool
+) -> None:
+    """Send bank-specific JSON constraints only when explicitly enabled."""
+    image_path = tmp_path / "frame.jpg"
+    image_path.write_bytes(b"not-a-real-jpeg-but-enough-for-payload")
+    bank_path = tmp_path / "question_bank.json"
+    _write_json(
+        bank_path,
+        {
+            "questions": [
+                {"id": "bear_present", "question": "Is a bear present?", "options": ["Yes", "No"]},
+                {"id": "color", "question": "Bear color?", "options": []},
+            ]
+        },
+    )
+    vlm_client = _StaticClient(_fenced({"items": [{"id": "bear_present", "answer": "Yes"}]}))
+    monkeypatch.setattr("visual_qa.task.create_endpoint_client", lambda **_kwargs: vlm_client)
+
+    VisualQaTask(
+        VisualQaConfig(
+            generation_mode="window-direct-vlm",
+            question_bank_file=str(bank_path),
+            vlm_model="vlm-test",
+            constrained_json=constrained_json,
+        )
+    ).run(DataEntry(media_path=str(image_path), data_path=str(tmp_path / "scene")))
+
+    response_format = vlm_client.requests[0].response_format
+    if not constrained_json:
+        assert response_format is None
+        return
+    assert response_format is not None
+    assert response_format["type"] == "json_schema"
+    items = response_format["json_schema"]["schema"]["properties"]["items"]
+    assert items["maxItems"] == 2
+    closed, open_ended = items["items"]["anyOf"]
+    assert closed["properties"]["id"]["const"] == "bear_present"
+    assert closed["properties"]["question"]["const"] == "Is a bear present?"
+    assert closed["properties"]["options"]["const"] == ["Yes", "No"]
+    assert open_ended["properties"]["options"]["const"] == []
+    assert closed["properties"]["answer"]["enum"] == ["Yes", "No"]
+    assert open_ended["properties"]["answer"] == {"type": "string"}
+    assert closed["required"] == ["id", "question", "answer"]
+
+
+@pytest.mark.parametrize("open_ended", [False, True])
+def test_normalization_uses_bank_question_and_options(tmp_path: Path, open_ended: bool) -> None:
+    """Model metadata cannot redefine the question or the answer vocabulary."""
+    bank_path = tmp_path / "bank.json"
+    _write_json(
+        bank_path,
+        {
+            "questions": [
+                {"id": "color", "question": "What color?", "options": ["Red", "Blue"]},
+                {"id": "description", "question": "Describe it."},
+            ]
+        },
+    )
+    items, errors = normalize_items(
+        [
+            {
+                "id": "color",
+                "question": "Model question",
+                "options": ["Blue", "Red"],
+                "answer": "Red",
+            },
+            {
+                "id": "description",
+                "question": "Wrong",
+                "options": ["Invented"],
+                "answer": "A red object.",
+            },
+        ],
+        bank=load_question_bank(bank_path),
+        strict_answers=True,
+        open_ended=open_ended,
+    )
+    assert not errors
+    assert items[0]["id"] == "color"
+    assert items[0]["question"] == "What color?"
+    assert items[0]["answer"] == "Red"
+    if not open_ended:
+        assert items[0]["options"] == ["Red", "Blue"]
+    assert items[1]["question"] == "Describe it."
+    assert items[1]["answer"] == "A red object."
+    assert items[1]["options"] == []

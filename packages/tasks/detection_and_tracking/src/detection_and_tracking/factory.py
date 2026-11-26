@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import cast
+from importlib.metadata import entry_points
 
 from core.registry import Registry
 
-from detection_and_tracking.config import DetectionAndTrackingConfig, TrackerKindValue
+from detection_and_tracking.config import DetectionAndTrackingConfig
 from detection_and_tracking.tracker import Tracker
 
 TrackerKind = str
@@ -64,8 +64,44 @@ def create_tracker(
     if config is None:
         if not _REGISTRY.is_registered(kind):
             return _REGISTRY.create(kind, logger, DetectionAndTrackingConfig())
-        config = DetectionAndTrackingConfig(tracker=cast(TrackerKindValue, kind))
+        config = DetectionAndTrackingConfig(tracker=kind)
     return _REGISTRY.create(kind, logger, config)
+
+
+TRACKER_ENTRY_POINT_GROUP = "cdf.trackers"
+
+
+def load_entry_point_trackers(
+    logger: logging.Logger, group: str = TRACKER_ENTRY_POINT_GROUP
+) -> list[str]:
+    """Register tracker builders published by installed packages.
+
+    Each entry point's name is the tracker kind and its object is a
+    ``TrackerBuilder``, for example in a plug-in's ``pyproject.toml``::
+
+        [project.entry-points."cdf.trackers"]
+        my-detector = "my_package.tracker:build_tracker"
+
+    A plug-in that fails to load is logged and skipped so it cannot break
+    the built-in backends.
+
+    Returns:
+        The tracker kinds registered from entry points.
+    """
+    loaded: list[str] = []
+    for entry_point in entry_points(group=group):
+        try:
+            builder = entry_point.load()
+            if not callable(builder):
+                raise TypeError("tracker factory is not callable")
+        except Exception as exc:
+            logger.warning(
+                "Skipping tracker plug-in %r (%s): %s", entry_point.name, entry_point.value, exc
+            )
+            continue
+        register_tracker(entry_point.name, builder)
+        loaded.append(entry_point.name)
+    return loaded
 
 
 def list_trackers() -> list[str]:
@@ -77,7 +113,9 @@ __all__ = [
     "TrackerBuilder",
     "TrackerKind",
     "PLANNED_TRACKER_KINDS",
+    "TRACKER_ENTRY_POINT_GROUP",
     "create_tracker",
     "list_trackers",
+    "load_entry_point_trackers",
     "register_tracker",
 ]

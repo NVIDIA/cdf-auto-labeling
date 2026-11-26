@@ -18,13 +18,12 @@ make run SCRIPT=workflow-runner:main \
   ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml --container-dry-run'
 ```
 
-Run the same cookbook and build only the missing images first
-(`--container-ensure-images build-if-missing`); use `--container-build-images`
-instead only when you intend to rebuild all images:
+Pull or build missing images first, then run the configured local cookbook.
+See [Installation](../../../../docs/user-guide/installation.md):
 
 ```bash
 make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file <cookbook-config> --container-ensure-images build-if-missing'
+  ARGS='--cookbook-file path/to/cookbook.local.yaml'
 ```
 
 Run explicit stages (selected stages keep the canonical relative order):

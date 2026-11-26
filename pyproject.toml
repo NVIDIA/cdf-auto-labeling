@@ -36,6 +36,7 @@ explicit_package_bases = true
 namespace_packages = true
 # Match uv editable src roots so mypy keeps workspace imports typed.
 mypy_path = [
+    "tests/integration/services",
     "tests/e2e",
     "packages/core/src",
     "packages/tasks/captioning/src",
@@ -84,13 +85,13 @@ ignore = []
 "packages/core/src/core/utils/telemetry.py" = ["PLC0415"]
 
 [tool.pytest.ini_options]
-pythonpath = ["scripts", "tests/e2e"]
+pythonpath = ["scripts", "tests/integration/services", "tests/e2e"]
 # Required because package-local tests share module basenames like test_task.py.
-# End-to-end tests are deselected by default so the unit-test CI job stays fast and
-# GPU/endpoint-free; `make test-e2e` re-selects them by overriding the -m expression.
-addopts = "--import-mode=importlib -m 'not e2e'"
+# Integration tests are deselected by default so the unit-test CI job stays fast and
+# GPU/endpoint-free; `make test-integration` re-selects them by overriding the -m expression.
+addopts = "--import-mode=importlib -m 'not integration'"
 markers = [
-    "e2e: end-to-end service tests that drive real service entrypoints (deselected by default; run via `make test-e2e`).",
+    "integration: source-mode service tests that drive real service entrypoints (deselected by default; run via `make test-integration`).",
 ]
 
 [tool.coverage.run]
@@ -112,6 +113,14 @@ include_namespace_packages = true
 show_missing = true
 precision = 2
 fail_under = 75.00
+
+[tool.uv]
+# Keep the default (no-extras) install resolvable on Windows; see CDF-01.
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
 
 [tool.uv.workspace]
 members = [

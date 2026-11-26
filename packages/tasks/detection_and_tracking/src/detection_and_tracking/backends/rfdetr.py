@@ -121,7 +121,7 @@ class _RFDetrRuntime:
             rgb_dir.mkdir(parents=True, exist_ok=True)
         frame_count = 0
 
-        for frame_number, frame_bgr, fps, width, height in frame_iter:
+        for frame_number, frame_bgr, time_s, width, height in frame_iter:
             if rgb_dir is not None:
                 self._write_rgb_frame(rgb_dir, frame_number, frame_bgr)
             pil_img = self.image_module.fromarray(
@@ -151,24 +151,16 @@ class _RFDetrRuntime:
                     height=height,
                     expansion_ratio=float(self.config.bbox_expansion_ratio),
                 )
-                instance = instances.setdefault(
-                    object_id,
-                    {
-                        "object_id": object_id,
-                        "object_type": class_name,
-                        "semantic_id": class_id,
-                        "track_id": track_id,
-                        "first_frame": frame_number,
-                        "last_frame": frame_number,
-                        "frame_count": 0,
-                        "confidence_avg": confidence,
-                    },
+                _accumulate_track_summary(
+                    instances,
+                    object_id=object_id,
+                    class_name=class_name,
+                    class_id=class_id,
+                    track_id=track_id,
+                    frame_number=frame_number,
+                    time_s=time_s,
+                    confidence=confidence,
                 )
-                instance["last_frame"] = frame_number
-                instance["frame_count"] = int(instance["frame_count"]) + 1
-                old_avg = float(instance["confidence_avg"])
-                n = int(instance["frame_count"])
-                instance["confidence_avg"] = old_avg + (confidence - old_avg) / n
                 frame_instances.append(
                     {
                         "object_id": object_id,
@@ -189,7 +181,6 @@ class _RFDetrRuntime:
                 }
             )
             frame_count += 1
-            _ = fps
 
         instances_out = [
             inst
@@ -261,13 +252,16 @@ class _RFDetrRuntime:
             if frame is None:
                 raise RuntimeError(f"Could not read image: {media_path}")
             height, width = frame.shape[:2]
-            yield 0, frame, 1.0, width, height
+            yield 0, frame, 0.0, width, height
             return
 
-        decoded = decode_video_bgr(media_path, cv2=self.cv2, np=self.np)
-        fps = decoded.stream.fps or 30.0
+        decoded = decode_video_bgr(media_path, cv2=self.cv2, np=self.np, with_timestamps=True)
+        fps = decoded.stream.fps or 0.0
         for frame_number, frame in enumerate(decoded.frames):
-            yield frame_number, frame, fps, decoded.stream.width, decoded.stream.height
+            time_s = decoded.timestamps[frame_number]
+            if time_s is None:
+                time_s = frame_number / fps if fps > 0 else 0.0
+            yield frame_number, frame, time_s, decoded.stream.width, decoded.stream.height
 
     def _predictions_to_array(self, predictions: Any) -> Any:
         xyxy = predictions.xyxy
@@ -801,6 +795,49 @@ def _best_iou_index(np: Any, box: Any, candidates: Any) -> int:
     )
     iou = inter / (box_area + cand_area - inter + 1e-9)
     return cast(int, iou.argmax())
+
+
+def _accumulate_track_summary(
+    instances: dict[str, dict[str, Any]],
+    *,
+    object_id: str,
+    class_name: str,
+    class_id: int,
+    track_id: int,
+    frame_number: int,
+    time_s: float,
+    confidence: float,
+) -> None:
+    """
+    Fold one tracked detection into its ``instances.json`` summary.
+
+    Besides ``confidence_avg``, this writes the fields the crop stage gates on, with
+    the same meaning as the SAM3 backends: ``detection_score`` (max per-frame
+    confidence) and ``start_time_s``/``end_time_s`` (first/last frame time).
+    """
+    instance = instances.setdefault(
+        object_id,
+        {
+            "object_id": object_id,
+            "object_type": class_name,
+            "semantic_id": class_id,
+            "track_id": track_id,
+            "first_frame": frame_number,
+            "last_frame": frame_number,
+            "start_time_s": time_s,
+            "end_time_s": time_s,
+            "frame_count": 0,
+            "confidence_avg": confidence,
+            "detection_score": confidence,
+        },
+    )
+    instance["last_frame"] = frame_number
+    instance["end_time_s"] = time_s
+    instance["frame_count"] = int(instance["frame_count"]) + 1
+    old_avg = float(instance["confidence_avg"])
+    n = int(instance["frame_count"])
+    instance["confidence_avg"] = old_avg + (confidence - old_avg) / n
+    instance["detection_score"] = max(float(instance["detection_score"]), confidence)
 
 
 __all__ = ["RFDetrTracker"]

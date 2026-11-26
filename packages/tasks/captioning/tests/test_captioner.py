@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
+import logging
 from pathlib import Path
+from unittest.mock import Mock
 
 import captioning.captioner as captioner_module
 import pytest
@@ -141,6 +143,11 @@ def test_summary_batches_chunk_descriptions_without_dropping_text() -> None:
         request.prompt for request in llm_client.requests if "chunk-desc-" in request.prompt
     ]
     assert len(source_prompts) > 1
+    merge_prompts = [
+        r.prompt for r in llm_client.requests if r.prompt.startswith("Merge the following")
+    ]
+    assert merge_prompts
+    assert all(captioner_module.DIRECT_START_INSTRUCTION in p for p in merge_prompts)
     combined_source_prompts = "\n".join(source_prompts)
     for idx in range(5):
         assert f"chunk-desc-{idx}" in combined_source_prompts
@@ -373,7 +380,10 @@ def test_dense_captioner_can_preserve_raw_video_model_output(
 def test_auto_media_mode_falls_back_when_endpoint_rejects_video_payload(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    # Other tests may raise the shared pseudo_annotation level; pin it for this logger.
+    caplog.set_level(logging.WARNING, logger="pseudo_annotation.task.captioning")
     _patch_single_window_video(monkeypatch, frame_caption_payload=True)
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"fake video fixture")
@@ -400,6 +410,10 @@ def test_auto_media_mode_falls_back_when_endpoint_rejects_video_payload(
     assert window["input_media_mode"] == "frames"
     assert "input_media" not in window
     assert window["media_failure_reason"] == "video_model_call_failed:RuntimeError"
+    fallback_logs = [r for r in caplog.records if "retrying with sampled frames" in r.getMessage()]
+    assert len(fallback_logs) == 1
+    assert fallback_logs[0].levelname == "WARNING"
+    assert "RuntimeError: endpoint rejected video payload" in fallback_logs[0].getMessage()
     assert window["description"] == "Frame fallback caption."
     assert sidecar["token_counts"] == {
         "prompt_tokens": 5,
@@ -529,3 +543,82 @@ def _patch_single_window_video(
     )
     if frame_caption_payload:
         monkeypatch.setattr(captioner_module, "extract_window_frames", fake_extract_window_frames)
+
+
+def test_empty_window_caption_and_video_fallback_are_logged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _patch_single_window_video(monkeypatch, frame_caption_payload=True)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake video fixture")
+    scene_paths = ensure_scene_skeleton(tmp_path / "scene")
+    for client, expected in (
+        (_StaticClient(""), "VLM returned an empty caption for window"),
+        (_VideoRejectThenFrameClient(), "Video-mode VLM call failed for window"),
+    ):
+        captioner = DenseCaptioner(
+            config=CaptioningConfig(window_frames=0, window_seconds=5.0, media_mode="auto"),
+            vlm_client=client,
+        )
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="pseudo_annotation"):
+            captioner.run(
+                media_path=video,
+                scene_paths=scene_paths,
+                scene_ctx=SceneContext.from_input(video),
+            )
+        assert expected in caplog.text
+
+
+@pytest.mark.parametrize(
+    "frames,minimum,count,skipped",
+    [
+        (38, 1.0, 3, True),
+        (38, 0.0, 4, False),
+        (40, 1.0, 4, False),
+        (1, 1.0, 1, False),
+        (38, 8.0, 3, True),
+        (37, 1.0, 3, False),
+    ],
+)
+def test_minimum_tail_preserves_meaningful_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    frames: int,
+    minimum: float,
+    count: int,
+    skipped: bool,
+) -> None:
+    monkeypatch.setattr(
+        captioner_module,
+        "probe_video",
+        lambda _: VideoInfo(fps=2.48, frame_count=frames, width=896, height=448),
+    )
+    client = _StaticClient("Cars cross the intersection.")
+    worker = DenseCaptioner(
+        config=CaptioningConfig(window_frames=0, window_seconds=5, min_tail_seconds=minimum),
+        vlm_client=client,
+    )
+    log_info = Mock()
+    monkeypatch.setattr(worker.logger, "info", log_info)
+    media = Mock(return_value=([], "video", None))
+    monkeypatch.setattr(worker, "_window_media_payloads", media)
+    video = tmp_path / "clip.mp4"
+    result = worker._run_video(
+        media_path=video,
+        scene_paths=ensure_scene_skeleton(tmp_path / "scene"),
+        scene_ctx=SceneContext.from_input(video),
+    )
+    assert result.sidecar_json is not None
+    payload = json.loads(result.sidecar_json.read_text())
+    assert len(payload["windows"]) == len(client.requests) == media.call_count == count
+    assert all(w["input_media_mode"] == "video" for w in payload["windows"])
+    tail = payload["windowing"]["skipped_tail"]
+    assert (tail is not None) == skipped
+    if skipped:
+        assert tail["start_s"] == 15.0
+        assert tail["end_s"] == pytest.approx(38 / 2.48)
+        assert tail["reason"] == "below_min_tail_seconds"
+        assert any("Skipping trailing window" in c.args[0] for c in log_info.call_args_list)

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,6 +15,7 @@ from typing import Any
 from core import SceneContext, ScenePaths, is_image_path, write_json
 from core.formats.daft import daft_envelope
 from core.media import discover_image_group
+from core.utils.logging import get_logger
 
 from captioning.clients import CaptionEndpointClient, ChatRequest, MediaPayload
 from captioning.config import CaptioningConfig
@@ -35,6 +37,7 @@ from captioning.parsing import (
     extract_window_description,
 )
 from captioning.prompts import (
+    DIRECT_START_INSTRUCTION,
     STANDARD_DENSE_VIDEO_PROMPT,
     STANDARD_IMAGE_PROMPT,
     STANDARD_SUMMARY_PROMPT,
@@ -64,12 +67,14 @@ class DenseCaptioner:
         config: CaptioningConfig,
         vlm_client: CaptionEndpointClient,
         llm_client: CaptionEndpointClient | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         if config.enable_llm_summary and llm_client is None:
             raise ValueError("enable_llm_summary requires an llm_client")
         self.config = config
         self.vlm_client = vlm_client
         self.llm_client = llm_client
+        self.logger = logger or get_logger("captioning", kind="task")
 
     def run(
         self,
@@ -190,7 +195,8 @@ class DenseCaptioner:
         )
         prompt = (
             f"{prompt}\n\nTreat all supplied images as different views of the same identity. "
-            "Produce one consolidated description using evidence across the views."
+            "Produce one consolidated description using evidence across the views. "
+            + DIRECT_START_INSTRUCTION
         )
         image_infos = [probe_image(path) for path in image_paths]
         image_payloads = tuple(read_image_payload(path) for path in image_paths)
@@ -284,6 +290,26 @@ class DenseCaptioner:
         )
         info = probe_video(media_path)
         windows = plan_windows(info, self.config)
+        skipped_tail = None
+        if (
+            self.config.window_frames == 0
+            and not self.config.single_window
+            and len(windows) > 1
+            and windows[-1].end_s - windows[-1].start_s
+            < min(self.config.min_tail_seconds, self.config.window_seconds)
+        ):
+            tail = windows.pop()
+            skipped_tail = {
+                "start_s": tail.start_s,
+                "end_s": tail.end_s,
+                "reason": "below_min_tail_seconds",
+            }
+            self.logger.info(
+                "Skipping trailing window %.3f-%.3fs: below %.3fs minimum",
+                tail.start_s,
+                tail.end_s,
+                self.config.min_tail_seconds,
+            )
         windows_out: list[dict[str, Any]] = []
         window_token_counts: list[dict[str, int]] = []
         window_finish_reasons: list[str] = []
@@ -306,6 +332,13 @@ class DenseCaptioner:
             except Exception as exc:
                 if self.config.media_mode != "auto" or input_mode != "video":
                     raise
+                self.logger.warning(
+                    "Video-mode VLM call failed for window %.3f-%.3fs (%s); "
+                    "retrying with sampled frames.",
+                    window.start_s,
+                    window.end_s,
+                    _exception_summary(exc),
+                )
                 media_payloads = extract_window_frames(
                     media_path=media_path,
                     window=window,
@@ -327,6 +360,12 @@ class DenseCaptioner:
             parsed = extract_json_object(raw)
             description = extract_window_description(raw, parsed)
             caption_status = "success" if description else "empty"
+            if not description:
+                self.logger.warning(
+                    "VLM returned an empty caption for window %.3f-%.3fs.",
+                    window.start_s,
+                    window.end_s,
+                )
             token_counts = _token_counts(call_metadata)
             if token_counts:
                 window_token_counts.append(token_counts)
@@ -378,6 +417,8 @@ class DenseCaptioner:
             "window_seconds": self.config.window_seconds,
             "window_frames": self.config.window_frames,
             "remainder_threshold": self.config.remainder_threshold,
+            "min_tail_seconds": self.config.min_tail_seconds,
+            "skipped_tail": skipped_tail,
             "single_window": self.config.single_window,
             "sampling_fps": self.config.sampling_fps,
             "resolution": self.config.resolution,
@@ -490,7 +531,8 @@ class DenseCaptioner:
             return None, None
         merge_prompt = (
             "Merge the following partial video summaries into one concise, factual "
-            "scene-level description. Preserve concrete actions and avoid inventing events."
+            "scene-level description. Preserve concrete actions and avoid inventing events. "
+            + DIRECT_START_INSTRUCTION
         )
         while len(batch_summaries) > 1:
             previous_count = len(batch_summaries)
@@ -580,6 +622,13 @@ class DenseCaptioner:
             except MediaDecodeError as exc:
                 if self.config.media_mode == "video":
                     raise
+                self.logger.warning(
+                    "Could not build a video payload for window %.3f-%.3fs (%s); "
+                    "using sampled frames.",
+                    window.start_s,
+                    window.end_s,
+                    exc,
+                )
                 media_error = f"video_payload_failed:{exc.__class__.__name__}"
         else:
             media_error = None
@@ -780,6 +829,12 @@ def _total_token_counts(
 
 def _unique_values(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def _exception_summary(exc: BaseException, limit: int = 300) -> str:
+    """Return ``Class: message`` truncated for a log line."""
+    text = f"{exc.__class__.__name__}: {exc}"
+    return text if len(text) <= limit else f"{text[: limit - 3]}..."
 
 
 def _append_failure_reason(existing: str | None, reason: str) -> str:

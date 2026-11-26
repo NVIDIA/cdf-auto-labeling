@@ -17,3 +17,8 @@
 .agents/
 .claude/
 .cursor/
+
+# Job-private registry credentials and Buildx state.
+.e2e-docker-*/
+
+.workflow-runner.*/

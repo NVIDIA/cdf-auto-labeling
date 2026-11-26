@@ -126,7 +126,13 @@ class CaptioningTask(SequentialTask):
             )
             if written:
                 self.logger.info("Captioning wrote %d DAFT pivot file(s).", len(written))
-        _record_daft_outputs(data_entry, written)
+        _record_daft_outputs(
+            data_entry,
+            written,
+            applicable=_applicable_emitters(
+                is_image=scene_ctx.is_image, summary=self.config.enable_llm_summary
+            ),
+        )
 
 
 def _build_captioner(config: CaptioningConfig, logger: logging.Logger) -> DenseCaptioner:
@@ -150,7 +156,7 @@ def _build_captioner(config: CaptioningConfig, logger: logging.Logger) -> DenseC
             retry_backoff_s=config.retry_backoff_s,
         )
     logger.debug("Captioning configured with VLM provider %s", config.vlm_provider)
-    return DenseCaptioner(config=config, vlm_client=vlm, llm_client=llm)
+    return DenseCaptioner(config=config, vlm_client=vlm, llm_client=llm, logger=logger)
 
 
 def _select_caption_input(
@@ -192,13 +198,41 @@ def _first_existing_path(*values: object) -> Path | None:
     return None
 
 
-def _record_daft_outputs(data_entry: DataEntry, written: tuple[Path, ...]) -> None:
+def _applicable_emitters(*, is_image: bool, summary: bool) -> tuple[str, ...]:
+    """DAFT files captioning must write for this scene (images have no time axis).
+
+    ``video_summarization`` is required only with an LLM summary pass; without
+    one it is written when the captions carry a summary, and is otherwise not
+    applicable.
+    """
+    names = (
+        ("scene_description",)
+        if is_image
+        else ("chunks", "scene_description", "temporal_description")
+    )
+    return (*names, "video_summarization") if summary and not is_image else names
+
+
+def _record_daft_outputs(
+    data_entry: DataEntry, written: tuple[Path, ...], *, applicable: tuple[str, ...]
+) -> None:
     written_by_name = {path.stem: path for path in written}
     update_annotation_export_state(
         data_entry.data_path,
         data_entry_id=data_entry.id,
         media_path=data_entry.media_path,
-        emitter_artifacts={name: written_by_name.get(name) for name in CAPTIONING_DAFT_EMITTERS},
+        # Whatever was written counts, even beyond the minimum (e.g. a summary
+        # derived from caption fields without an LLM summary pass).
+        emitter_artifacts={
+            name: written_by_name.get(name)
+            for name in CAPTIONING_DAFT_EMITTERS
+            if name in applicable or name in written_by_name
+        },
+        not_applicable=[
+            name
+            for name in CAPTIONING_DAFT_EMITTERS
+            if name not in applicable and name not in written_by_name
+        ],
     )
 
 

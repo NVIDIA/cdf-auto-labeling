@@ -1,22 +1,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""E2E test for the workflow runner (always-on, dry-run).
-
-The workflow runner orchestrates the other services as Docker containers. A real
-multi-container run needs a GPU-capable container runtime, which a Docker-in-Docker
-CI service does not provide, so this pre-merge test validates the container plan in
-``--container-dry-run`` mode (no Docker or GPU required).
-"""
+"""Source CLI integration check for the workflow container plan."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from e2e_harness import RunService, entries_payload
+from service_harness import RunService, entries_payload
 
-pytestmark = pytest.mark.e2e
+pytestmark = pytest.mark.integration
 
 
 def test_workflow_runner_dry_run_plans_video_pipeline(
@@ -41,3 +35,8 @@ def test_workflow_runner_dry_run_plans_video_pipeline(
     )
 
     result.assert_ok()
+    plans = [line for line in result.output.splitlines() if "Running container node" in line]
+    assert plans
+    assert all("docker run" in line for line in plans)
+    assert any("(stage captioning)" in line for line in plans)
+    assert not list(scene_dir.rglob("video_captions.json"))

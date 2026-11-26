@@ -558,6 +558,28 @@ def rootless_env_with_defaults(user: str | None, env: tuple[str, ...]) -> tuple[
     return (*env, *additions)
 
 
+def host_mount_source(source: Path) -> Path:
+    """Translate job-container paths for a host Docker socket; local runs are unchanged."""
+    raw = os.environ.get("UPA_CONTAINER_HOST_MOUNTS")
+    if raw is None:
+        return source
+    mapping = json.loads(raw)
+    if not isinstance(mapping, dict) or any(
+        not isinstance(local, str)
+        or not isinstance(host, str)
+        or not Path(local).is_absolute()
+        or not Path(host).is_absolute()
+        for local, host in mapping.items()
+    ):
+        raise ValueError(
+            "UPA_CONTAINER_HOST_MOUNTS must map absolute container paths to host paths"
+        )
+    for local in sorted(mapping, key=lambda path: len(Path(path).parts), reverse=True):
+        if source.is_relative_to(local):
+            return Path(mapping[local]) / source.relative_to(local)
+    raise ValueError(f"Container bind source is not covered by a host mount: {source}")
+
+
 def runner_config_from_args(
     args: Namespace,
     mounts: tuple[VolumeMount, ...],
@@ -573,7 +595,10 @@ def runner_config_from_args(
         workdir=args.container_workdir,
         user=user,
         env=tuple(args.container_env),
-        mounts=mounts,
+        mounts=tuple(
+            VolumeMount(host_mount_source(mount.source), mount.target, mount.read_only)
+            for mount in mounts
+        ),
         dry_run=bool(args.container_dry_run),
         build_images=bool(args.container_build_images),
         ensure_images=bool(getattr(args, "container_ensure_images", False)),

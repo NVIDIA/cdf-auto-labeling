@@ -16,20 +16,23 @@ product. Contributor checks live in
 
 You need:
 
-- Python 3.12+, `uv`, GNU Make, and Docker or Podman.
+- Linux, GNU Make, and Docker. No host Python or `.venv` is needed.
   [Installation](installation.md)
 - GPU checkpoints for detection and, if you use it, super resolution.
   [Model Provisioning](model-provisioning.md)
 - A reachable VLM and LLM endpoint, plus an API key in your shell.
   [VLM and LLM Endpoints](vlm-llm-endpoints.md)
 
-### Step 1 — Confirm the runner is installed
+### Step 1 — Prepare the runner image
 
 ```bash
-git clone <repo-url>
-cd paidf-auto-labeling
-make sync
-make run SCRIPT=workflow-runner:main ARGS='--help'
+git clone "<repo-url>" cdf-auto-labeling
+cd cdf-auto-labeling
+make pull
+# Until the updated runner is published, build it after pulling:
+docker buildx build --load -t cdf-workflow-runner \
+  -f services/workflow_runner/docker/Dockerfile .
+make run ARGS='--help'
 ```
 
 If `--help` fails, stop and fix [Installation](installation.md) before
@@ -51,18 +54,18 @@ moving on.
 ### Step 4 — Dry-run the cookbook
 
 A dry run validates cookbook parsing, stage order, image selection, and mount
-resolution without running any containers. Always do this before a real run —
-see the Path A commands below.
+resolution inside the runner container without starting annotation-stage
+containers. Always do this before a real run — see the Path A commands below.
 
 ### Step 5 — Run for real
 
-Run the same cookbook without `--container-dry-run`. This builds/pulls the
-required images and actually executes each stage.
+Run the same cookbook without `--container-dry-run`. This executes each stage using the images you pulled or built beforehand.
 
 ### Step 6 — Confirm the output
 
-A successful run produces one scene directory per input under your configured
-output root, containing `raw/`, `contextual/`, `task/`, and `sidecars/`. See
+For a single-file input, `out_dir` is the scene directory. For a directory input,
+each scene is written under `out_dir/<media-filename>`. Each scene contains
+`raw/`, `contextual/`, `task/`, and `sidecars/`. See
 [Experiment Output Layout](experiment-output-layout.md) for what belongs in
 each folder.
 
@@ -80,12 +83,14 @@ chains change.
 | **D — Image spatial grounding** | Captioning, 2D grounding with SAM3, and referring phrases | Image-only |
 | **E — Attribute-only or multi-view visual search** | Visual attribute search over explicit attributes or one identity image group | Best attribute-search-specific validation |
 
-Prerequisites: Python 3.12+, `uv`, GNU Make, Docker or Podman, and endpoint or
+Prerequisites: Linux, GNU Make, Docker, and endpoint or
 GPU prerequisites for the selected workflow. Full matrix:
 [Installation](installation.md#requirements).
 
 Path A is the worked example below. Paths B–E use the same copy, edit,
-dry-run, run pattern with a different cookbook.
+dry-run, run pattern with a different cookbook. All paths outside the repository
+need explicit [runner mounts](operations-workflow-runner.md#container-launcher-mounts),
+including external configs and output directories.
 
 ## Path A — Video Auto-Labeling
 
@@ -99,6 +104,9 @@ names. Copy it, then edit only the values for this machine:
 cp cookbooks/video_data_augmentation/configs/pipeline_video.yaml \
   cookbooks/video_data_augmentation/configs/pipeline_video.local.yaml
 ```
+
+The repository is mounted automatically. For external media/model/output paths,
+add matching [runner mounts](operations-workflow-runner.md#container-launcher-mounts).
 
 Set these fields in `pipeline_video.local.yaml`:
 
@@ -127,7 +135,7 @@ Dry-run first. This compiles the stage plan without starting models:
 
 ```bash
 CONFIG=cookbooks/video_data_augmentation/configs/pipeline_video.local.yaml
-make run SCRIPT=workflow-runner:main \
+make run \
   ARGS="--cookbook-file ${CONFIG} --container-dry-run"
 ```
 
@@ -135,16 +143,16 @@ Check the printed plan for stage order, image names, the model-cache path,
 SAM3 mounts, and endpoint URLs. Then run for real:
 
 ```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS="--cookbook-file ${CONFIG} --container-user auto --container-ensure-images --container-env NVIDIA_API_KEY"
+make run \
+  ARGS="--cookbook-file ${CONFIG} --container-user auto --container-env NVIDIA_API_KEY"
 ```
 
 `--container-user auto` keeps output files writable across stages.
-`--container-ensure-images` builds any missing stage images.
+Stage images must already be present; use `make pull` or build them before running.
 `--container-env NVIDIA_API_KEY` passes the key into every stage container
 without writing the secret into YAML.
 
-Success: one scene directory appears under your `out_dir` with `raw/`,
+Success: for a single-file input, `out_dir` is the scene directory with `raw/`,
 `contextual/`, `task/`, and `sidecars/`. See
 [Experiment Output Layout](experiment-output-layout.md) for what belongs in
 each folder. If the run fails, start at [Troubleshooting](troubleshooting.md).
@@ -166,7 +174,7 @@ URLs, then run:
 
 ```bash
 CONFIG=cookbooks/smart_spaces/configs/pipeline_warehouse_event_reasoning.local.yaml
-make run SCRIPT=workflow-runner:main \
+make run \
   ARGS="--cookbook-file ${CONFIG} --container-dry-run"
 ```
 
@@ -200,11 +208,11 @@ Stage the NGC warehouse clips first. Path C then uses
 CONFIG=cookbooks/visual_attribute_search/configs/pipeline_video_pas_reasoning.local.yaml
 export NVIDIA_API_KEY="<your-key>"
 
-make run SCRIPT=workflow-runner:main \
+make run \
   ARGS="--cookbook-file ${CONFIG} --container-dry-run"
 
-make run SCRIPT=workflow-runner:main \
-  ARGS="--cookbook-file ${CONFIG} --container-user auto --container-ensure-images --container-env NVIDIA_API_KEY"
+make run \
+  ARGS="--cookbook-file ${CONFIG} --container-user auto --container-env NVIDIA_API_KEY"
 ```
 
 Success:

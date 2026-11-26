@@ -47,9 +47,8 @@ with explicit user approval.
    - Execution requested and explicitly approved -> run the whole selected
      pipeline once through `workflow-runner:main`. The runner executes the
      selected stages internally in canonical order; the agent does not re-invoke
-     per stage. Choose the build mode as a value, not a branch:
-     `--container-ensure-images build-if-missing` builds only missing images;
-     `--container-build-images` rebuilds all images. Continue to Step 5.
+     per stage. Pull or build required images before `make run`; its runtime
+     image does not support source builds. Continue to Step 5.
 
 5. **Validate outputs.** After the single run completes, confirm each selected
    stage produced its expected outputs, in canonical order. This is a finite
@@ -72,16 +71,17 @@ with explicit user approval.
 
 ## Examples
 
-Inspect the plan, execute while building only missing images, then validate:
+With images prepared and a local cookbook configured, inspect the plan, execute,
+then validate:
 
 ```bash
-# Inspect the generated container plan (no execution)
+# Inspect stage commands (runner container only)
 make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml --container-dry-run'
+  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.local.yaml --container-dry-run'
 
-# Execute, building only images that are missing
+# Execute using prepared images
 make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml --container-ensure-images build-if-missing'
+  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.local.yaml'
 
 # Validate stage outputs before reporting success
 ls -lhR output/auto_labeling/<scenario>/

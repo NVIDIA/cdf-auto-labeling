@@ -3,7 +3,12 @@
 
 from pathlib import Path
 
-from captioning.prompts import STANDARD_DENSE_VIDEO_PROMPT, STANDARD_IMAGE_PROMPT, load_prompt
+from captioning.prompts import (
+    DIRECT_START_INSTRUCTION,
+    STANDARD_DENSE_VIDEO_PROMPT,
+    STANDARD_IMAGE_PROMPT,
+    load_prompt,
+)
 
 
 def test_load_prompt_falls_back_when_prompt_file_is_empty(tmp_path: Path) -> None:
@@ -37,6 +42,7 @@ def test_load_prompt_uses_non_empty_prompt_file(tmp_path: Path) -> None:
 def test_standard_prompts_are_generic() -> None:
     assert (
         STANDARD_DENSE_VIDEO_PROMPT
-        == "Elaborate on the visual and narrative elements of the video in detail."
+        == "Elaborate on the visual and narrative elements of the video in detail. "
+        + DIRECT_START_INSTRUCTION
     )
-    assert STANDARD_IMAGE_PROMPT == "Describe the image in detail."
+    assert STANDARD_IMAGE_PROMPT == "Describe the image in detail. " + DIRECT_START_INSTRUCTION

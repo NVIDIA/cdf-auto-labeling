@@ -80,6 +80,7 @@ class OpenAICompatibleClient:
                     temperature=request.temperature,
                     top_p=request.top_p,
                     extra_body=self._parser_extra_body,
+                    response_format=request.response_format,
                 )
                 text = self._response_text(response)
                 timer.record(

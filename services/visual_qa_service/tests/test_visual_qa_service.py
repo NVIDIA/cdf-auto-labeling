@@ -171,9 +171,10 @@ def test_visual_qa_service_writes_normalized_sidecar(tmp_path: Path) -> None:
     state = read_pipeline_state(scene_dir)
     assert state.annotation_export is not None
     outcomes = {emitter.name: emitter for emitter in state.annotation_export.emitters}
-    assert outcomes["mcq"].success is False
+    # Only BCQ items exist, so MCQ and open QA do not apply: not recorded as failures.
+    assert "mcq" not in outcomes
     assert outcomes["bcq"].success is True
-    assert outcomes["open_qa"].success is False
+    assert "open_qa" not in outcomes
 
 
 def test_container_uses_controlled_media_toolchain() -> None:

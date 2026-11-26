@@ -9,12 +9,21 @@ backends can register themselves at any time by calling
 :func:`register_tracker`.
 """
 
+from core.utils.logging import get_logger
+
+from detection_and_tracking.config import DetectionAndTrackingConfig, pas_tracking_config
+from detection_and_tracking.tracker import (
+    Tracker,
+    TrackingResult,
+)
+
+# Bind tracker types before importing the built-in backends.
+# isort: split
 from detection_and_tracking import (  # noqa: F401  (import side-effect: register builtins)
     backends as _builtin_backends,
 )
 from detection_and_tracking.artifacts import TRACKING_ARTIFACTS_KEY, TrackingArtifactsState
 from detection_and_tracking.backends import StubTracker
-from detection_and_tracking.config import DetectionAndTrackingConfig, pas_tracking_config
 from detection_and_tracking.crops import (
     CropRecord,
     extract_track_crops,
@@ -25,14 +34,11 @@ from detection_and_tracking.factory import (
     TrackerKind,
     create_tracker,
     list_trackers,
+    load_entry_point_trackers,
     register_tracker,
 )
 from detection_and_tracking.task import (
     DetectionAndTrackingTask,
-)
-from detection_and_tracking.tracker import (
-    Tracker,
-    TrackingResult,
 )
 
 __all__ = [
@@ -53,3 +59,6 @@ __all__ = [
     "plan_track_crops",
     "register_tracker",
 ]
+
+# Plug-ins may import any public symbol while their entry points are loading.
+load_entry_point_trackers(get_logger("detection_and_tracking.backends"))

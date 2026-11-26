@@ -9,13 +9,11 @@ from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-TrackerKindValue = Literal[
-    "stub",
-    "rfdetr-bytetrack",
-    "rfdetr-boosttrack",
-    "rfdetr-deepocsort",
-    "sam3",
-]
+# Any kind registered with ``factory.register_tracker`` (built-ins: stub,
+# rfdetr-bytetrack, rfdetr-boosttrack, sam3; plug-ins: the ``cdf.trackers`` entry-point
+# group). Unknown kinds are rejected by the service CLI and ``create_tracker``, both of
+# which list the registered kinds.
+TrackerKindValue = str
 
 
 class DetectionAndTrackingConfig(BaseModel):

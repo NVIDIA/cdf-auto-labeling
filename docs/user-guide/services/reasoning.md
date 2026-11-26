@@ -15,7 +15,7 @@ opt-in and disabled by default, so you explicitly choose what to generate.
 - A reachable LLM endpoint. See
   [VLM and LLM Endpoints](../vlm-llm-endpoints.md). Only
   `openai-compatible` is currently supported.
-- A `DaftExportConfig` file that turns on the stages you want (see step 3).
+- Enable the stages you want through a `DaftExportConfig` file or CLI `--set` overrides (see step 3).
 
 ## Step by step
 
@@ -25,7 +25,7 @@ opt-in and disabled by default, so you explicitly choose what to generate.
 make run SCRIPT=reasoning-service:main ARGS='--input-file payloads/simple.jsonl'
 ```
 
-With no config file, every LLM-driven stage stays disabled, so this validates
+With no config file or `--set` overrides, every LLM-driven stage stays disabled, so this validates
 wiring without needing an endpoint.
 
 ### 2. Check the full option list
@@ -63,6 +63,10 @@ Each stage with `enabled: true` but no resolvable endpoint logs a warning and
 skips writing rather than failing the whole run — check the log if an expected
 output file is missing.
 
+You can override task fields with `--set events.enabled=true`, or omit the config
+file and configure tasks entirely with `--set`. See [Configuration files and CLI
+overrides](README.md#configuration-files-and-cli-overrides) for precedence and examples.
+
 ## Verify it worked
 
 - The command exits `0` with no traceback.
@@ -88,3 +92,25 @@ output file is missing.
 
 Run [Training Export](training-export.md) as a separate batch step once you
 have a directory of completed scenes ready to package.
+
+### Named CLI overrides
+
+Use named flags for common settings, with or without a configuration file:
+
+```bash
+make run SCRIPT=reasoning-service:main ARGS="--input-file /path/to/input.jsonl --tasks events open_qa --open-qa-question-file /path/to/questions.json --llm-endpoint-url http://localhost:8000/v1 --llm-model served-model --temperature 0 --max-tokens 4096"
+```
+
+`--tasks` replaces the configured task selection; omitted tasks are disabled.
+Without this flag, the configuration controls which tasks run.
+`--temperature`, `--top-p`, `--max-tokens`, and `--llm-retries` override
+enabled tasks only. Input flags never enable tasks implicitly:
+`--open-qa-question-file`, `--bcq-question-file`, `--mcq-item-file`,
+`--temporal-localization-query-file`, and `--causal-pair-file` use the
+corresponding task's existing file format. Relative task paths retain the
+existing behavior: relative to the configuration directory, or the working
+directory when no configuration file is supplied.
+
+As with PAS, precedence is defaults, task configuration and its `cli` section,
+advanced `--set` overrides, then explicit named flags. Validation occurs after
+merging. Both services reuse the configuration snapshot read during parsing.

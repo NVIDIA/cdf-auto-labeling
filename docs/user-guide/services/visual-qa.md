@@ -50,6 +50,13 @@ make run SCRIPT=visual-qa-service:main ARGS="\
   --vlm-model <served-vlm-model>"
 ```
 
+If raw model responses contain malformed JSON, `--constrained-json` sends a
+question-bank schema as `response_format`. Compatible endpoints constrain each
+item to a bank ID and closed-question answers to their allowed options.
+Support depends on the endpoint configuration; the Gemini provider ignores
+this option. A valid empty response is still allowed, and schema constraints
+do not guarantee complete answers or factual accuracy.
+
 ### 4. Generate answers via VLM evidence extraction, then LLM reasoning
 
 ```bash
@@ -87,6 +94,7 @@ make run SCRIPT=visual-qa-service:main ARGS="\
 | "No question bank" error in a generation mode | A question bank is required for generation modes; pass `--question-bank-file` |
 | `normalize-only` produces empty task files | The scene has no supported Visual QA sidecar yet — run a generation mode first, or confirm the upstream producer wrote to `sidecars/visual_qa/windows.json` |
 | `metadata-llm` finds nothing to answer from | No supported captioning/metadata sidecar exists in the scene — run captioning first |
+| `Visual QA wrote 0 item(s)` with a small or local VLM | A valid `{"items": []}` response can produce zero items, as can invalid JSON or filtered answers. First inspect the raw responses in `sidecars/visual_qa/windows.json` and the question bank’s conditions. Use `--constrained-json` only when the model output is actually unparsable |
 | Endpoint auth error | Confirm `NVIDIA_API_KEY`/`GEMINI_API_KEY` is exported and matches the endpoint provider |
 
 For error output you don't recognize, see

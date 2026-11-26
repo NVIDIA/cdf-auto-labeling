@@ -10,17 +10,22 @@ downloaded into local working paths, and how local task outputs are uploaded
 back when the caller requested a remote destination.
 """
 
+from __future__ import annotations
+
 import atexit
+import importlib
 import logging
 import os
 import shutil
 import tempfile
 from pathlib import Path, PurePosixPath
-from typing import cast
+from types import ModuleType
+from typing import TYPE_CHECKING, cast
 
-import multistorageclient as msc
-import multistorageclient.shortcuts as msc_shortcuts
 from core.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    import multistorageclient as msc
 
 SUPPORTED_REMOTE_URL_PREFIXES = (
     "msc://",
@@ -34,7 +39,23 @@ SUPPORTED_REMOTE_URL_PREFIXES = (
 )
 
 
+MSC_NOT_INSTALLED_MESSAGE = (
+    "Remote storage URLs need multi-storage-client, which is not installed "
+    "(it has no Windows wheels). Use local paths, or install it on Linux or macOS: "
+    "uv pip install 'multi-storage-client[boto3]'."
+)
+
+
+def _import_msc_module(name: str = "multistorageclient") -> ModuleType:
+    """Import an MSC module on first remote use so local-only runs never need it."""
+    try:
+        return importlib.import_module(name)
+    except ImportError as exc:
+        raise ImportError(MSC_NOT_INSTALLED_MESSAGE) from exc
+
+
 def _cleanup_inline_msc_config(path: str) -> None:
+    """Remove the temporary config and clear its environment reference if unchanged."""
     try:
         if os.path.exists(path):
             os.remove(path)
@@ -49,9 +70,9 @@ class MSCStorage:
     """
     Shared wrapper around multistorageclient for one process run.
 
-    The MSC module is imported once during startup and any remote URLs that are
-    known up front can be resolved immediately so later file transfers reuse the
-    cached MSC client(s) instead of rebuilding them at each call site.
+    The MSC module is imported on first remote use, so local-only runs work without
+    it; later file transfers reuse the cached MSC client(s) instead of rebuilding them
+    at each call site.
     """
 
     logger: logging.Logger
@@ -64,8 +85,15 @@ class MSCStorage:
             logger: Optional logger used for transfer messages. Defaults to a framework logger.
         """
         self.logger = logger or get_logger("multistorage")
-        self._msc = msc
-        self._configure_inline_config()
+        self._msc_module: ModuleType | None = None
+
+    @property
+    def _msc(self) -> ModuleType:
+        """Initialize inline configuration and cache MSC on first remote access."""
+        if self._msc_module is None:
+            self._configure_inline_config()
+            self._msc_module = _import_msc_module()
+        return self._msc_module
 
     def _configure_inline_config(self) -> None:
         """
@@ -89,7 +117,7 @@ class MSCStorage:
             handle.write(config_str)
         os.environ["MSC_CONFIG"] = path
         atexit.register(_cleanup_inline_msc_config, path)
-        msc_shortcuts._reinitialize_after_fork()
+        _import_msc_module("multistorageclient.shortcuts")._reinitialize_after_fork()
         self.logger.debug("Configured MSC from MULTISTORAGECLIENT_CONFIGURATION.")
 
     def is_remote_storage_url(self, url: str) -> bool:
@@ -112,7 +140,7 @@ class MSCStorage:
         Returns:
             Storage client and path pair returned by MSC.
         """
-        return cast(tuple[msc.StorageClient, str], self._msc.resolve_storage_client(url))
+        return cast("tuple[msc.StorageClient, str]", self._msc.resolve_storage_client(url))
 
     def _local_file_destination(self, remote_path: str, local_path: str | None) -> str:
         """

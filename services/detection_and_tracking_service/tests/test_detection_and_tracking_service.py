@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pytest
 from core import DataEntry, read_pipeline_state
 from core.policy import EmptyOutputPolicy
+from detection_and_tracking import factory
 from detection_and_tracking.artifacts import TRACKING_ARTIFACTS_KEY
 from detection_and_tracking.config import DetectionAndTrackingConfig
 from detection_and_tracking_service.main import (
@@ -544,3 +545,15 @@ def test_crop_cli_bounds_reject_invalid_values(
 
     assert exc_info.value.code == 2
     assert message in capsys.readouterr().err
+
+
+def test_tracker_arg_accepts_plugin_registered_kind(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A backend registered outside this repo is a valid --tracker value (CDF-06)."""
+    builders = factory._REGISTRY._builders
+    monkeypatch.setitem(builders, "dummy", builders["stub"])
+    parser = argparse.ArgumentParser()
+
+    assert _validate_tracker_arg(parser, "dummy") == "dummy"
+    assert DetectionAndTrackingConfig(tracker="dummy").tracker == "dummy"
+    with pytest.raises(SystemExit):
+        _validate_tracker_arg(parser, "not-registered")

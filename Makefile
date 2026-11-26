@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-.PHONY: help sync lint lint-check mypy test test-e2e check run build pull clean
+.PHONY: help sync lint lint-check mypy test test-integration test-e2e check run build pull clean
 
 SCRIPT ?=
 ARGS ?=
@@ -9,6 +9,8 @@ PYTHON ?= python3
 CONTAINER_RUNTIME ?= docker
 NGC_REGISTRY ?= nvcr.io/nvidia
 NGC_TAG ?= 1.1.0
+RUNNER_IMAGE ?= cdf-workflow-runner
+RUNNER_DOCKER_ARGS ?=
 NGC_IMAGES ?= \
 	cdf-workflow-runner \
 	cdf-super-resolution-service \
@@ -49,9 +51,11 @@ help:
 	@echo "  lint-check     Check lint and formatting without changes"
 	@echo "  mypy           Run mypy type checks"
 	@echo "  test           Run tests with coverage report"
-	@echo "  test-e2e       Run end-to-end service tests (needs GPU runner + external model endpoints)"
+	@echo "  test-integration Run source-mode service tests (optional external endpoints)"
+	@echo "  test-e2e       Run real-container workflows (requires GPU, images, checkpoints, endpoints)"
 	@echo "  check          Run lint, mypy, and test checks. Make sure this passes before submitting a PR."
-	@echo "  run            Select and run a workspace script (optional ARGS=... for script argv)"
+	@echo "  run            Run a workflow or service container (no host Python required)"
+	@echo "                 ARGS='--cookbook-file path/to/cookbook.yaml' or SCRIPT=<service>:main"
 	@echo "  build          Select and build a registered Docker image"
 	@echo "  pull           Pull prebuilt stage images from NGC and tag them with local names"
 	@echo "                 (optional NGC_IMAGES=\"cdf-captioning-service ...\" NGC_TAG=... CONTAINER_RUNTIME=podman)"
@@ -74,17 +78,40 @@ mypy: sync
 test: sync
 	uv run pytest -p pytest_cov --cov --cov-report=term --cov-report=xml:coverage_report.xml --junitxml=test_report.xml
 
-# End-to-end tests run each service through its real CLI entrypoint. Tests self-skip
-# when their prerequisites (external model endpoints, ffmpeg) are unavailable.
-# --basetemp writes each test's scene outputs to e2e_artifacts/ so they can be
-# inspected locally and uploaded as browsable CI artifacts.
-test-e2e: sync
-	uv run pytest -m e2e tests/e2e --basetemp=e2e_artifacts --junitxml=e2e_report.xml
+# Deterministic source CLI checks; no model endpoints or GPU required.
+# Preserve service outputs for local inspection.
+test-integration: sync
+	uv run pytest -m integration tests/integration/services --basetemp=integration_artifacts --junitxml=integration_report.xml
+
+test-e2e:
+	uv run --package workflow-runner python tests/e2e/run_e2e.py $(ARGS)
 
 check: sync lint mypy test
 
-run: sync
-	uv run --group dev python scripts/run.py $(SCRIPT) -- $(ARGS)
+# The host daemon must see the manifest at the same path as the runner container.
+run:
+	@set -eu; \
+	run_image="$(RUNNER_IMAGE)"; \
+	socket_mount=--mount=type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock; \
+	if [ -n "$(SCRIPT)" ] && [ "$(SCRIPT)" != workflow-runner:main ]; then \
+		socket_mount=; \
+		run_image=$$(docker run --rm --entrypoint python3 \
+			--user "$$(id -u):$$(id -g)" \
+			--mount "type=bind,src=$(CURDIR),dst=$(CURDIR),readonly" \
+			--workdir "$(CURDIR)" "$(RUNNER_IMAGE)" \
+			scripts/run.py --container-image "$(SCRIPT)"); \
+	fi; \
+	runner_tmp=$$(mktemp -d "$(CURDIR)/.workflow-runner.XXXXXX"); \
+	trap 'rmdir "$$runner_tmp"' EXIT; \
+	docker run --rm --network host \
+		--user "$$(id -u):$$(id -g)" \
+		--group-add "$$(stat -c %g /var/run/docker.sock)" \
+		$$socket_mount \
+		--mount "type=bind,src=$(CURDIR),dst=$(CURDIR)" \
+		--workdir "$(CURDIR)" --env "TMPDIR=$$runner_tmp" \
+		--env NVIDIA_API_KEY --env GEMINI_API_KEY \
+		--env MULTISTORAGECLIENT_CONFIGURATION \
+		$(RUNNER_DOCKER_ARGS) "$$run_image" $(if $(strip $(ARGS)),$(ARGS),--help)
 
 build:
 	$(PYTHON) scripts/build.py $(IMAGE)

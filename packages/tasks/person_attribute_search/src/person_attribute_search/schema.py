@@ -37,6 +37,10 @@ PRIMARY_COLORS: tuple[str, ...] = (
 )
 
 # Seed vocabularies for the categorical attribute slots (see PAS attribute_v3).
+# Must include every option the shipped person-attribute question bank offers the
+# VLM (cookbooks/visual_attribute_search/question_bank.person_attributes.json),
+# or valid answers are reported as vocabulary drift; a test enforces this. The
+# older PAS v3 values stay for attribute files produced before the bank.
 ATTRIBUTE_VOCABULARY: dict[str, tuple[str, ...]] = {
     "age": ("child", "teenager", "adult", "senior"),
     "gender": ("male", "female"),
@@ -56,13 +60,38 @@ ATTRIBUTE_VOCABULARY: dict[str, tuple[str, ...]] = {
         "coat",
         "robe",
         "camisole",
+        "suits",
+        "caftan",
         "other",
     ),
-    "top_inner_length": ("sleeveless", "short sleeve", "long sleeve"),
-    "top_inner_type": ("not visible", "collared", "round-neck", "hoodie", "sweater"),
-    "bottom_length": ("short", "long"),
-    "bottom_type": ("pants", "shorts", "skirt", "dress", "leggings"),
-    "shoe_type": ("sneakers", "boots", "high heels", "sandals", "flip-flops", "barefoot"),
+    "top_inner_length": ("sleeveless", "short sleeve", "long sleeve", "not visible"),
+    "top_inner_type": (
+        "not visible",
+        "collared",
+        "round-neck",
+        "hoodie",
+        "sweater",
+        "t-shirt",
+        "shirt",
+        "vest",
+        "camisole",
+        "other",
+    ),
+    "bottom_length": ("short", "long", "capri", "knee"),
+    "bottom_type": ("pants", "shorts", "skirt", "skirts", "dress", "leggings", "suits", "other"),
+    "shoe_type": (
+        "sneakers",
+        "boots",
+        "high heels",
+        "sandals",
+        "flip-flops",
+        "barefoot",
+        "loafers",
+        "dress shoes",
+        "slippers",
+        "leather shoes",
+        "other",
+    ),
     "headwear": ("yes", "no"),
     "mask": ("yes", "no"),
     "glasses": ("yes", "no"),
