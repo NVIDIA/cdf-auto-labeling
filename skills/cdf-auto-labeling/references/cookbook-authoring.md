@@ -26,8 +26,8 @@ while authoring, not flow steps.
 5. **Validate.** Confirm path references with the asset checks (workflow-stage
    skill) and dry-run the cookbook:
    `make run SCRIPT=workflow-runner:main ARGS='--cookbook-file <config> --container-dry-run'`.
-   If the dry-run or an asset check fails, fix the cookbook and re-run this step
-   (bounded: until it passes, or STOP and report a blocker you cannot resolve).
+   Apply the retry limit and execution guardrails in
+   [Container execution](../SKILL.md#container-execution).
 
 ## Examples
 
@@ -40,7 +40,7 @@ data:
     output: { out_dir: output/auto_labeling/<scenario> }
 runtime:
   model_cache_path: <model-cache>
-  gpu_ids: [0]
+  gpu_ids: "0"
 container:
   env:
     # Bare name only: forwards the host NVIDIA_API_KEY into the container.

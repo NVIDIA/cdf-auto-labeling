@@ -96,16 +96,16 @@ this run. Then go to Step 3.*
 ### Step 3: Container Dry-Run
 
 *Mandatory; runs after Step 2. Produces: the inspected runner-generated Docker
-command (nothing is executed here). Then go to Step 4.*
+command (only the runner container starts). Then go to Step 4.*
 
 Always dry-run first to inspect the runner-generated Docker command; use the
 dry-run command in [run-reference.md](video-data-augmentation/run-reference.md).
 
 Confirm the generated command includes the intended stages, the SAM3 mount, the
 model-cache mount, GPU selection, endpoint values, and every intended
-`stage_args` flag. Set the `--container-build-images` flag from image state (a
-value, not a branch): add it when the runner image is missing or stale, omit it
-when the image is already built. Either way, go to Step 4.
+`stage_args` flag. Prepare missing or stale images separately using
+[Installation](../../../docs/user-guide/installation.md); `make run` does not
+build images. Then go to Step 4.
 
 ### Step 4: Pre-flight Checklist
 
@@ -227,18 +227,9 @@ reasoning:
 
 ## Guardrails
 
-- Do not commit secrets, tokens, or absolute user home paths in the tracked
-  `pipeline_video.yaml`. Keep real media paths and SAM3 host mounts out of the
-  committed cookbook; use placeholder paths and `NVIDIA_API_KEY` env
-  names.
-- Always run `--container-dry-run` before any real run.
-- Require explicit user approval of the exact command before executing any
-  Docker command.
-- Do not modify the caller's `media_path` or edit their input media in place.
-- Never invent endpoint URLs, model names, credentials, or the input/output
-  paths; use only values the user provides. If a data path, output path,
-  endpoint, or other critical setting is missing or ambiguous, ask the user and
-  confirm the values before running.
+Follow [Container execution](../SKILL.md#container-execution) for shared run and
+credential guardrails. Do not modify the caller's `media_path` or edit their
+input media in place. Never invent missing endpoint, model, or input/output values.
 
 ## References
 

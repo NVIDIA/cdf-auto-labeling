@@ -1,12 +1,29 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import importlib.util
 import os
+import sys
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
 from core.utils.multistorage import MSCStorage, _cleanup_inline_msc_config
+
+
+@pytest.fixture(autouse=True)
+def optional_msc_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let mocked remote-storage tests run where MSC cannot be installed."""
+    if importlib.util.find_spec("multistorageclient") is not None:
+        return
+    msc = ModuleType("multistorageclient")
+    shortcuts = ModuleType("multistorageclient.shortcuts")
+    monkeypatch.setattr(msc, "resolve_storage_client", MagicMock(), raising=False)
+    monkeypatch.setattr(shortcuts, "_reinitialize_after_fork", MagicMock(), raising=False)
+    monkeypatch.setattr(msc, "shortcuts", shortcuts, raising=False)
+    monkeypatch.setitem(sys.modules, "multistorageclient", msc)
+    monkeypatch.setitem(sys.modules, "multistorageclient.shortcuts", shortcuts)
 
 
 def test_storage_initializes_without_inline_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -23,11 +40,15 @@ def test_storage_skips_inline_config_when_explicit_config_exists(
     monkeypatch.setenv("MULTISTORAGECLIENT_CONFIGURATION", '{"profiles": {}}')
 
     with (
+        # Patch MSC first: importing it registers its own atexit handlers.
+        patch("multistorageclient.shortcuts._reinitialize_after_fork") as reinit,
         patch("core.utils.multistorage.tempfile.mkstemp") as mkstemp,
         patch("core.utils.multistorage.atexit.register") as cleanup_register,
-        patch("core.utils.multistorage.msc_shortcuts._reinitialize_after_fork") as reinit,
     ):
-        MSCStorage()
+        storage = MSCStorage()
+        mkstemp.assert_not_called()
+        _ = storage._msc
+        _ = storage._msc
 
     mkstemp.assert_not_called()
     cleanup_register.assert_not_called()
@@ -46,14 +67,18 @@ def test_storage_configures_inline_json_config(
     monkeypatch.setenv("MULTISTORAGECLIENT_CONFIGURATION", config)
 
     with (
+        # Patch MSC first: importing it registers its own atexit handlers.
+        patch("multistorageclient.shortcuts._reinitialize_after_fork") as reinit,
         patch(
             "core.utils.multistorage.tempfile.mkstemp",
             return_value=(fd, str(config_path)),
         ) as mkstemp,
         patch("core.utils.multistorage.atexit.register") as cleanup_register,
-        patch("core.utils.multistorage.msc_shortcuts._reinitialize_after_fork") as reinit,
     ):
-        MSCStorage()
+        storage = MSCStorage()
+        mkstemp.assert_not_called()
+        _ = storage._msc
+        _ = storage._msc
 
     mkstemp.assert_called_once_with(prefix="msc_config_", suffix=".json")
     cleanup_register.assert_called_once_with(_cleanup_inline_msc_config, str(config_path))
@@ -121,7 +146,7 @@ def test_download_if_remote_downloads_file_to_temp_path(tmp_path: Path) -> None:
     with (
         patch("core.utils.multistorage.tempfile.mkdtemp", return_value=str(tmp_path)),
         patch(
-            "core.utils.multistorage.msc.resolve_storage_client",
+            "multistorageclient.resolve_storage_client",
             return_value=(client, "videos/file.mp4"),
         ),
     ):
@@ -142,7 +167,7 @@ def test_download_if_remote_downloads_file_to_existing_directory(tmp_path: Path)
     destination.mkdir()
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(client, "videos/file.mp4"),
     ):
         downloaded = MSCStorage().download_if_remote(
@@ -160,7 +185,7 @@ def test_download_if_remote_rejects_remote_file_without_filename() -> None:
     client.is_file.return_value = True
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(client, ""),
     ):
         with pytest.raises(ValueError, match="does not include a file name"):
@@ -182,7 +207,7 @@ def test_download_if_remote_rejects_remote_prefix_when_file_expected() -> None:
     client.is_file.return_value = False
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(client, "videos/"),
     ):
         with pytest.raises(ValueError, match="not a file"):
@@ -197,7 +222,7 @@ def test_download_if_remote_downloads_file_to_explicit_destination(tmp_path: Pat
     destination = tmp_path / "active.mp4"
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(client, "videos/file.mp4"),
     ):
         downloaded = MSCStorage().download_if_remote(
@@ -234,7 +259,7 @@ def test_download_if_remote_syncs_remote_prefix_to_temp_dir(tmp_path: Path) -> N
     with (
         patch("core.utils.multistorage.tempfile.mkdtemp", return_value=str(destination)),
         patch(
-            "core.utils.multistorage.msc.resolve_storage_client",
+            "multistorageclient.resolve_storage_client",
             side_effect=[
                 (source_client, "annotations"),
                 (target_client, str(destination)),
@@ -270,7 +295,7 @@ def test_upload_uploads_file_to_remote_path(tmp_path: Path) -> None:
     target_client = MagicMock()
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(target_client, "annotations/labels.json"),
     ):
         uploaded = MSCStorage().upload_if_remote(
@@ -291,7 +316,7 @@ def test_upload_uploads_file_to_remote_prefix(tmp_path: Path) -> None:
     target_client = MagicMock()
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(target_client, "annotations/"),
     ):
         uploaded = MSCStorage().upload_if_remote(str(local_path), "s3://bucket/annotations/")
@@ -310,7 +335,7 @@ def test_upload_syncs_local_directory_to_remote_prefix(tmp_path: Path) -> None:
     source_client = MagicMock()
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         side_effect=[
             (target_client, "outputs/annotations"),
             (source_client, str(local_path)),
@@ -338,7 +363,7 @@ def test_upload_syncs_local_directory_to_remote_prefix_with_delete_unmatched(
     source_client = MagicMock()
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         side_effect=[
             (target_client, "outputs/annotations"),
             (source_client, str(local_path)),
@@ -367,7 +392,7 @@ def test_download_if_remote_syncs_remote_prefix_to_local_dir(tmp_path: Path) -> 
     destination = tmp_path / "download"
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         side_effect=[
             (source_client, "annotations"),
             (target_client, str(destination)),
@@ -398,7 +423,7 @@ def test_download_if_remote_creates_empty_dir_for_empty_remote(
     destination = tmp_path / "download"
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(source_client, "annotations"),
     ):
         downloaded = MSCStorage().download_if_remote(
@@ -418,7 +443,7 @@ def test_download_if_remote_rejects_remote_file_when_directory_expected(tmp_path
     source_client.is_file.return_value = True
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(source_client, "annotations/labels.json"),
     ):
         with pytest.raises(ValueError, match="expected a directory"):
@@ -542,13 +567,14 @@ def test_upload_if_remote_rejects_missing_source(tmp_path: Path) -> None:
     resolve.assert_not_called()
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Named pipes require os.mkfifo")
 def test_upload_if_remote_rejects_source_that_is_not_file_or_directory(tmp_path: Path) -> None:
     source = tmp_path / "source.pipe"
     os.mkfifo(source)
     target_client = MagicMock()
 
     with patch(
-        "core.utils.multistorage.msc.resolve_storage_client",
+        "multistorageclient.resolve_storage_client",
         return_value=(target_client, "outputs/source.pipe"),
     ):
         with pytest.raises(ValueError, match="not a file or directory"):
@@ -556,3 +582,22 @@ def test_upload_if_remote_rejects_source_that_is_not_file_or_directory(tmp_path:
 
     target_client.upload_file.assert_not_called()
     target_client.sync_from.assert_not_called()
+
+
+@pytest.mark.parametrize("inline_config", [None, '{"profiles": {}}'])
+def test_local_paths_work_without_msc_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, inline_config: str | None
+) -> None:
+    """Keep local transfers usable without MSC, including with inline configuration."""
+    monkeypatch.delenv("MSC_CONFIG", raising=False)
+    monkeypatch.delenv("MULTISTORAGECLIENT_CONFIGURATION", raising=False)
+    if inline_config is not None:
+        monkeypatch.setenv("MULTISTORAGECLIENT_CONFIGURATION", inline_config)
+    monkeypatch.setitem(sys.modules, "multistorageclient", None)
+    storage = MSCStorage()
+    local = str(tmp_path / "clip.mp4")
+
+    assert storage.download_if_remote(local, is_file=True) == local
+    assert storage.upload_if_remote(local, str(tmp_path / "out")) == local
+    with pytest.raises(ImportError, match="multi-storage-client"):
+        storage.download_if_remote("s3://bucket/clip.mp4", is_file=True)

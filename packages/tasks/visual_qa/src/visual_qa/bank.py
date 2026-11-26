@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 LETTER_ALPHABET = string.ascii_uppercase + string.ascii_lowercase
+# Stored answer for an `allow_empty` question the model left empty.
+EMPTY_ANSWER = "none"
 AGGREGATION_TYPES = frozenset({"majority", "majority_tie_first", "first", "any", "supermajority"})
 
 _PREFIX_RE = re.compile(r"^\s*[\(\[\{]?([A-Za-z0-9])[\)\]\}]?\s*[.)\-:：、]\s*(.+?)\s*$")
@@ -29,6 +31,9 @@ class QuestionSpec:
     options: tuple[str, ...] = ()
     include_if: dict[str, str] = field(default_factory=dict)
     aggregation: dict[str, Any] = field(default_factory=dict)
+    # The question defines an empty answer as meaningful ("Use an empty string
+    # if nothing is carried"); keep it as ``none`` instead of dropping the item.
+    allow_empty: bool = False
 
 
 @dataclass(frozen=True)
@@ -80,6 +85,7 @@ def load_question_bank(path: Path | str | None) -> QuestionBank:
             options=options,
             include_if=include_if,
             aggregation=aggregation,
+            allow_empty=bool(raw.get("allow_empty", False)),
         )
     return QuestionBank(questions=questions, source_path=bank_path)
 
@@ -101,20 +107,26 @@ def normalize_items(
             continue
         qid = str(raw.get("id") or raw.get("question_id") or "").strip()
         spec = bank.questions.get(qid)
-        question = _clean_string(raw.get("question")) or (spec.question if spec else "")
+        question = spec.question if spec else (_clean_string(raw.get("question")) or "")
         if not qid or not question:
             errors.append(f"item[{idx}] skipped: missing id or question")
             continue
 
-        raw_options = raw.get("options")
-        if isinstance(raw_options, list):
-            options = _clean_option_list(raw_options)
-        elif spec is not None:
-            options = list(spec.options)
-        else:
-            options = []
+        options = list(spec.options) if spec is not None else _clean_option_list(raw.get("options"))
 
         raw_answer = raw.get("answer")
+        if isinstance(raw_answer, list | dict):
+            # Structured answers (e.g. accessory tuples) are kept as JSON text;
+            # _clean_string would otherwise discard them as empty.
+            raw_answer = json.dumps(raw_answer)
+        if (
+            spec is not None
+            and spec.allow_empty
+            and not options
+            and isinstance(raw_answer, str)
+            and not raw_answer.strip()
+        ):
+            raw_answer = EMPTY_ANSWER
         answer = normalize_answer(raw_answer, options)
         if answer is None:
             errors.append(f"item[{idx}] skipped: empty answer for {qid}")
@@ -502,6 +514,55 @@ def _clean_string(value: Any) -> str | None:
     return None
 
 
+def visual_qa_response_format(bank: QuestionBank) -> dict[str, Any] | None:
+    """
+    Build an OpenAI ``json_schema`` response format for the visual QA item shape.
+
+    Each item must copy one bank question id; closed questions must answer with one
+    of that question's options. Items may be omitted (``include_if``) and may carry
+    extra fields such as ``reasoning_trace``.
+
+    Returns:
+        The ``response_format`` payload, or ``None`` for an empty bank.
+    """
+    if not bank.questions:
+        return None
+    item_schemas: list[dict[str, Any]] = []
+    for spec in bank.questions.values():
+        answer: dict[str, Any] = (
+            {"type": "string", "enum": list(spec.options)} if spec.options else {"type": "string"}
+        )
+        item_schemas.append(
+            {
+                "type": "object",
+                "required": ["id", "question", "answer"],
+                "properties": {
+                    "id": {"type": "string", "const": spec.qid},
+                    "question": {"type": "string", "const": spec.question},
+                    "options": {"type": "array", "const": list(spec.options)},
+                    "answer": answer,
+                },
+            }
+        )
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "visual_qa_items",
+            "schema": {
+                "type": "object",
+                "required": ["items"],
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "maxItems": len(item_schemas),
+                        "items": {"anyOf": item_schemas},
+                    }
+                },
+            },
+        },
+    }
+
+
 __all__ = [
     "QuestionBank",
     "QuestionSpec",
@@ -511,4 +572,5 @@ __all__ = [
     "normalize_answer",
     "normalize_items",
     "strip_option_prefix",
+    "visual_qa_response_format",
 ]

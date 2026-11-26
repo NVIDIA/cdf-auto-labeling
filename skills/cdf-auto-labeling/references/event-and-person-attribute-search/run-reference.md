@@ -14,17 +14,9 @@ endpoint but no VLM endpoint. Captioning and Visual QA use their own containers.
 
 ## Dry-run and execution
 
-Replace `<config>` with one of the four names and use a gitignored local copy for
-real deployment values:
-
-```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/visual_attribute_search/configs/<config> --container-dry-run'
-```
-
-After a successful preflight and explicit approval, remove
-`--container-dry-run`. Add `--container-ensure-images build-if-missing` only when
-preflight found missing images.
+Choose a cookbook from the matrix, configure a gitignored `*.local.yaml` copy,
+then follow [Container execution](../../SKILL.md#container-execution) for image
+preparation, dry-run, authorization, and output validation.
 
 ## Expected artifacts
 

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Literal, override
 
@@ -81,7 +82,15 @@ class ReasoningTask(SequentialTask):
             config_dir=self.config_dir,
             reasoning_mode=self.reasoning_mode,
         )
-        _record_pipeline_state(paths, data_entry, cfg=self.config, emitted_paths=emitted_paths)
+        _record_pipeline_state(
+            paths, data_entry, cfg=self.config, emitted_paths=emitted_paths, is_image=ctx.is_image
+        )
+        owned = _owned_outputs(paths, cfg=self.config, is_image=ctx.is_image)
+        _report_unproduced(
+            list(owned),
+            {name for name, path in owned.items() if path in emitted_paths},
+            logger=self.logger,
+        )
         return data_entry
 
     def _run_entry(
@@ -137,7 +146,6 @@ class ReasoningTask(SequentialTask):
         extras = {"reasoning_provider": reasoning_provider}
         prompt_cache: PromptRegistryCache = {}
         emitted_paths: list[Path] = []
-
         # Anomaly mode runs first: it only needs the captioning windows,
         # and its verdict feeds the causal-linkage ``video_type`` tagging
         # below. The verdict is a non-DAFT sidecar, so it bypasses the
@@ -161,7 +169,7 @@ class ReasoningTask(SequentialTask):
                 inputs = inputs.with_anomaly_verdict(verdict)
             else:
                 inputs = inputs.with_refreshed_anomaly(paths, logger=self.logger)
-            if paths.sidecar_anomaly.exists():
+            if verdict is not None and paths.sidecar_anomaly.exists():
                 emitted_paths.append(paths.sidecar_anomaly)
 
         if cfg.events is not None and cfg.events.enabled:
@@ -230,6 +238,28 @@ class ReasoningTask(SequentialTask):
         return inputs, emitted_paths
 
 
+def _report_unproduced(expected: list[str], produced: set[str], *, logger: logging.Logger) -> None:
+    """Warn about enabled stages that wrote nothing; fail when none wrote anything.
+
+    Stages log detailed causes at their existing log levels. This summary keeps a partial run from
+    looking complete, and an entirely empty run from passing at all.
+    """
+    missing = [name for name in expected if name not in produced]
+    if not missing:
+        return
+    logger.warning(
+        "[reasoning] %d of %d enabled stages wrote nothing: %s",
+        len(missing),
+        len(expected),
+        ", ".join(missing),
+    )
+    if len(missing) == len(expected):
+        raise RuntimeError(
+            "Reasoning produced no output: every enabled stage was skipped "
+            f"({', '.join(missing)}). See the stage logs for each cause."
+        )
+
+
 def _should_strip_reasoning(*, cfg: DaftExportConfig | None, mode: ReasoningMode) -> bool:
     if mode == "strip":
         return True
@@ -244,33 +274,64 @@ def _record_pipeline_state(
     *,
     cfg: DaftExportConfig | None,
     emitted_paths: set[Path],
+    is_image: bool = False,
 ) -> None:
     emitted = {path.resolve() for path in emitted_paths if path.exists()}
+    owned = _owned_outputs(paths, cfg=cfg, is_image=is_image)
     update_annotation_export_state(
         paths.scene_dir,
         data_entry_id=entry.id,
         media_path=entry.media_path,
         emitter_artifacts={
-            name: path if path.resolve() in emitted else None
-            for name, path in _owned_outputs(paths, cfg=cfg).items()
+            name: path if path.resolve() in emitted else None for name, path in owned.items()
         },
+        # open_qa is also written by Visual QA; a disabled reasoning stage does not own it.
+        not_applicable=[
+            name for name in _ALL_STAGE_OUTPUTS if name not in owned and name != "open_qa"
+        ],
     )
 
 
-def _owned_outputs(paths: ScenePaths, *, cfg: DaftExportConfig | None) -> dict[str, Path]:
-    outputs = {
-        "events": paths.contextual_events,
-        "msted": paths.contextual_msted,
-        "temporal_localization": paths.task_temporal_localization,
-        "mcq_openended": paths.task_mcq_openended,
-        "bcq_openended": paths.task_bcq_openended,
-        "causal_linkage": paths.task_causal_linkage,
+_ALL_STAGE_OUTPUTS = (
+    "events",
+    "msted",
+    "temporal_localization",
+    "open_qa",
+    "mcq_openended",
+    "bcq_openended",
+    "causal_linkage",
+    "anomaly",
+)
+
+
+def _owned_outputs(
+    paths: ScenePaths, *, cfg: DaftExportConfig | None, is_image: bool = False
+) -> dict[str, Path]:
+    """Outputs of the enabled stages only.
+
+    Listing a disabled stage would record it as a failed emitter
+    (``success: false``) in the pipeline state, indistinguishable from an
+    enabled stage that failed.
+    """
+    if cfg is None:
+        return {}
+    candidates = {
+        "events": (cfg.events, paths.contextual_events),
+        "msted": (cfg.msted, paths.contextual_msted),
+        "temporal_localization": (cfg.temporal_localization, paths.task_temporal_localization),
+        "open_qa": (cfg.open_qa, paths.task_open_qa),
+        "mcq_openended": (cfg.mcq_openended, paths.task_mcq_openended),
+        "bcq_openended": (cfg.bcq_openended, paths.task_bcq_openended),
+        "causal_linkage": (cfg.causal_linkage, paths.task_causal_linkage),
+        "anomaly": (cfg.anomaly, paths.sidecar_anomaly),
     }
-    if cfg is not None and cfg.open_qa is not None and cfg.open_qa.enabled:
-        outputs["open_qa"] = paths.task_open_qa
-    if cfg is not None and cfg.anomaly is not None and cfg.anomaly.enabled:
-        outputs["anomaly"] = paths.sidecar_anomaly
-    return outputs
+    return {
+        name: path
+        for name, (stage_cfg, path) in candidates.items()
+        if stage_cfg is not None
+        and stage_cfg.enabled
+        and (not is_image or name in {"open_qa", "mcq_openended", "bcq_openended"})
+    }
 
 
 __all__ = ["ReasoningMode", "ReasoningTask", "to_daft_tasks"]

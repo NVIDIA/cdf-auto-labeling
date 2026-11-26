@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -179,3 +180,18 @@ def test_dockerfile_uses_approved_vp9_codec_profile() -> None:
     assert "--component pyav" in text
     assert text.count("media_toolchain.py verify") == 2
     assert "source=/opt/media-runtime" in text
+
+
+def test_seedvr2_stack_is_an_extra_that_the_image_installs() -> None:
+    """A no-extras install must not pull PyTorch; the service image opts in (CDF-02)."""
+    service_root = Path(__file__).parents[1]
+    with (service_root / "pyproject.toml").open("rb") as handle:
+        project = tomllib.load(handle)["project"]
+
+    assert "super-resolution" in project["dependencies"]
+    assert not any("seedvr2" in dep for dep in project["dependencies"])
+    assert project["optional-dependencies"]["seedvr2"] == ["super-resolution[seedvr2]"]
+    dockerfile = (service_root / "docker" / "Dockerfile").read_text(encoding="utf-8")
+    assert re.search(
+        r'uv sync --frozen[^\n]*--package "\$\{PACKAGE_NAME\}" --extra seedvr2', dockerfile
+    )

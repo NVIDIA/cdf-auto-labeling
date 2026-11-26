@@ -78,6 +78,29 @@ person_attribute_search:
   bucket_query_generation: false
 ```
 
+## Direct Python CLI
+
+With the service installed in the active Python environment, PAS can run without
+Docker, workflow-runner, or a configuration file:
+
+```bash
+python -m event_and_person_attribute_search_service.main \
+  --input-file /path/to/input.jsonl \
+  --attribute-json /path/to/attributes.json \
+  --query-prompt-file cookbooks/visual_attribute_search/pas_synonymous_query_prompt.json \
+  --query-count 3 \
+  --llm-endpoint-url https://inference-api.nvidia.com/v1 \
+  --llm-model <served-model-name> \
+  --temperature 0 --max-tokens 2048
+```
+
+Run this example from the repository root. Attribute and prompt files are input
+data, not service configuration. Keep exactly one input entry for explicit
+attributes. Named flags are the primary interface; optional `--config-file`
+and advanced `--set` follow the same precedence and snapshot rules as
+[Reasoning](reasoning.md#direct-python-cli). PAS consumes existing attributes;
+this command does not run upstream detection, captioning, or VQA.
+
 ## Outputs
 
 - Explicit bundle: `bundle_attributes.json`, `bundle_queries.json`, optional

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 EndpointProvider = Literal["openai-compatible", "gemini"]
 
@@ -44,6 +44,9 @@ class ChatRequest:
     max_tokens: int = 1024
     temperature: float = 0.2
     top_p: float = 0.9
+    # OpenAI-style ``response_format`` (e.g. ``{"type": "json_schema", ...}``) for
+    # endpoints that support constrained decoding. The Gemini client ignores it.
+    response_format: dict[str, Any] | None = None
 
 
 class EndpointClient(Protocol):

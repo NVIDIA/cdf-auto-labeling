@@ -83,6 +83,23 @@ make run SCRIPT=workflow-runner:main \
   ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml --container-dry-run'
 ```
 
+## Video payload mode and Cosmos
+
+The current CLI default is `--media-mode auto`: it tries video clips and can
+fall back to sampled images. For Cosmos video experiments, explicitly pass
+`--media-mode video` (in `stage_args` when using a cookbook) to keep the
+request on the video path and expose failures instead of switching to images.
+The OpenAI-compatible client serializes video as a `video_url` content item
+with a video data URL; `video_url` is a payload field, not an endpoint URL.
+Use the configured API base URL, such as
+`https://inference-api.nvidia.com/v1`.
+
+`--media-mode frames` sends sampled `image_url` items. An endpoint's image-count
+cap is not evidence of its video limit or the model's intrinsic capacity.
+Verify limits for the deployed endpoint; do not hard-code an eight-frame or
+16 MB limit as a universal Cosmos requirement. Explicit video mode does not
+change window selection or guarantee how many frames the server processes.
+
 ## Gotchas
 
 - A custom `--prompt-file` changes caption style (e.g. a traffic-scene prompt).

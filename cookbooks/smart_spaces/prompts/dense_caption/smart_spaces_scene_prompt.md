@@ -58,4 +58,5 @@ the described subject.
 
 Do not infer intent, identity, employment or legal status, or causes and
 outcomes outside the frames. Return concise prose suitable for downstream
-event-verification QA and anomaly reasoning.
+event-verification QA and anomaly reasoning. Begin directly with the description,
+with no introduction or heading.

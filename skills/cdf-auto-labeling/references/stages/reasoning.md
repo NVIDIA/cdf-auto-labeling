@@ -41,8 +41,9 @@ reference content, not steps.
    models). Suggest a dry-run (`--container-dry-run`) to verify the command.
 
 **Execution is out of scope.** This skill only produces configuration; it does
-not run the stage. Executing (Docker via `workflow-runner`, which requires
-explicit user approval) is the operator skill's responsibility.
+not run the stage. Execution belongs to the operator: use either the direct
+Python CLI below or Docker via `workflow-runner`, according to the requested path.
+Docker execution via `workflow-runner` requires explicit user approval.
 
 **On missing or unresolvable input.** This skill runs no tools or models, so the
 only failure mode is missing or ambiguous input. If a required target file,
@@ -102,6 +103,33 @@ Dry-run the stage before a real run:
 make run SCRIPT=workflow-runner:main \
   ARGS='--cookbook-file cookbooks/visual_attribute_search/configs/pipeline_video_pas_reasoning.yaml --container-dry-run'
 ```
+
+## Direct Python CLI
+
+With the service installed in the active Python environment, no workflow-runner
+or Docker is required:
+
+```bash
+python -m reasoning_service.main \
+  --input-file /path/to/input.jsonl \
+  --tasks open_qa \
+  --open-qa-question-file /path/to/questions.json \
+  --llm-endpoint-url https://inference-api.nvidia.com/v1 \
+  --llm-model <served-model-name> \
+  --temperature 0 --max-tokens 4096
+```
+
+Use named flags for common settings; `--config-file` is optional and `--set`
+is for advanced nested overrides. Precedence is model defaults, task config
+and its `cli` defaults, `--set`, then explicit named flags. Validation occurs
+after merging; parsing and execution reuse one configuration snapshot.
+`--tasks` replaces the configured selection. Generation flags
+(`--temperature`, `--top-p`, `--max-tokens`, `--llm-retries`) affect enabled
+tasks only, including tasks enabled through `--set`; they never enable tasks.
+Task-input flags also do not enable tasks. See the
+[Reasoning guide](../../../../docs/user-guide/services/reasoning.md) for the
+input flags and path-resolution rules. Inputs must already contain the upstream
+scene artifacts required by the selected tasks.
 
 ## Gotchas
 

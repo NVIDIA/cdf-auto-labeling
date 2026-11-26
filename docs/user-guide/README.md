@@ -9,16 +9,14 @@ a cookbook, then switch to [Developer Docs](../developer/README.md).
 
 Typical commands:
 
-- `make sync` — install the workspace
-- `make run SCRIPT=workflow-runner:main ARGS='...'` — run a cookbook
-- `make build IMAGE=<service>:<target>` — build a stage image when needed
-- `make pull` — pull the prebuilt stage images from [NGC](ngc-containers.md)
-  instead of building them
+- `make pull` — download prebuilt container images
+- `make run ARGS='...'` — run a cookbook
+- `make build IMAGE=<service>:<target>` — build a stage image (requires host Python 3.12+)
 
 Read the pages in this order the first time. After that, use the table as a
 lookup.
 
-1. [Installation](installation.md) — clone, `make sync`, confirm `--help`
+1. [Installation](installation.md) — clone, prepare container images, confirm `--help`
 2. [Model Provisioning](model-provisioning.md) — download the checkpoints
    your cookbook needs
 3. [VLM and LLM Endpoints](vlm-llm-endpoints.md) — stand up or point at a
@@ -36,7 +34,7 @@ paths. If something fails, use [Troubleshooting](troubleshooting.md).
 | Goal | Page |
 | --- | --- |
 | First end-to-end run | [Getting Started](getting-started.md) |
-| Clone, sync, host requirements, and limitations | [Installation](installation.md) |
+| Clone, images, host requirements, and limitations | [Installation](installation.md) |
 | Pick a sample cookbook | [Samples and Cookbooks](samples-and-cookbooks.md) |
 | Run, debug, or understand one service | [Services](services/README.md) |
 | Compile and launch a cookbook | [Operations: Workflow Runner](operations-workflow-runner.md) |

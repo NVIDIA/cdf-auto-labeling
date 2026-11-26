@@ -8,15 +8,21 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+# Without this, models tend to open with "Based on the provided frames, here is
+# the caption:", which then lands in the stored labels.
+DIRECT_START_INSTRUCTION = "Begin directly with the description, with no introduction or heading."
+
 STANDARD_DENSE_VIDEO_PROMPT = (
-    "Elaborate on the visual and narrative elements of the video in detail."
+    "Elaborate on the visual and narrative elements of the video in detail. "
+    + DIRECT_START_INSTRUCTION
 )
 
-STANDARD_IMAGE_PROMPT = "Describe the image in detail."
+STANDARD_IMAGE_PROMPT = "Describe the image in detail. " + DIRECT_START_INSTRUCTION
 
 STANDARD_SUMMARY_PROMPT = """Summarize the following per-window video captions into one concise,
 factual scene-level description. Preserve concrete actions and avoid inventing
-events not present in the window captions.
+events not present in the window captions. Begin directly with the
+description, with no introduction or heading.
 """
 
 
@@ -61,6 +67,7 @@ def prompt_metadata(
 
 
 __all__ = [
+    "DIRECT_START_INSTRUCTION",
     "STANDARD_DENSE_VIDEO_PROMPT",
     "STANDARD_IMAGE_PROMPT",
     "STANDARD_SUMMARY_PROMPT",

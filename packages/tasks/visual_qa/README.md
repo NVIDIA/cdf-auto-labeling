@@ -49,6 +49,12 @@ answers against the bank, applies `include_if` gates, aggregates multi-window
 answers, records a stable sidecar contract, and writes DAFT task pivots:
 `task/mcq.json`, `task/bcq.json`, and `task/open_qa.json`.
 
+Items the model answers unusably (empty, or not one of the options) are dropped,
+listed under `warnings` in `items.json`, and logged as a warning. A bank question
+whose empty answer is meaningful (e.g. "Use an empty string if nothing is
+carried") sets `"allow_empty": true`; its empty answer is then kept as `none`.
+List answers (e.g. accessory tuples) are kept as JSON text.
+
 API keys are read from environment variables. Explicit `vlm_api_key_env` and
 `llm_api_key_env` config values are honored first. Without explicit overrides,
 VLM calls prefer `VLM_API_KEY` and LLM calls prefer `LLM_API_KEY`;

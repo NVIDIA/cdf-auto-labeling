@@ -86,7 +86,8 @@ docker image ls 'cdf-*'
   `--password-stdin`.
 - Do not run `docker logout`, delete images, or prune the host unless the user
   asks.
-- Do not pass `--container-build-images` after pulling, because it rebuilds
-  every stage image from source and replaces the pulled ones.
+- `make run` uses prepared images; source-build flags apply only to the optional
+  host source CLI. Prepare the runner image too; see
+  [Installation](../../../docs/user-guide/installation.md#clone-and-pull).
 - Pulled images do not change host requirements. GPU stages still need the
   NVIDIA driver, NVIDIA Container Toolkit, and mounted checkpoints.

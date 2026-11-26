@@ -12,39 +12,48 @@ Install only what the selected workflow needs.
 
 | Item | Requirement |
 | --- | --- |
-| OS | Linux-like host with bind mounts and a container runtime |
-| Python | 3.12 or newer |
-| Package manager | [`uv`](https://docs.astral.sh/uv/getting-started/installation/) |
-| Build/launcher glue | GNU Make |
-| Container runtime | Docker or Podman for cookbook execution |
-| GPU runtime | NVIDIA GPU, NVIDIA driver, and NVIDIA Container Toolkit |
+| OS | Linux; native Windows execution is outside the supported product path |
+| Container runtime | Docker with access to `/var/run/docker.sock` |
+| Launcher | GNU Make; Git to obtain the cookbooks and Makefile |
+| GPU stages | NVIDIA driver, NVIDIA Container Toolkit, and model checkpoints |
+| VLM/LLM stages | Reachable endpoint and matching credentials |
+| Remote storage | [MSC configuration](remote-storage.md), consumed inside Linux containers |
 
-| Workflow | Extra requirements |
-| --- | --- |
-| Workflow-runner dry run | Docker or Podman |
-| Remote VLM/LLM-backed runs | Reachable endpoint URLs and matching credentials |
-| GPU-backed stages | Local checkpoints plus NVIDIA Container Toolkit |
-| Remote storage | [Multi-Storage Client configuration](remote-storage.md) |
+Host Python is not needed for container execution (`make run`).
+`make build` requires host Python 3.12+ to run `scripts/build.py`; invoking Docker
+build commands directly does not. `uv` and a host `.venv` are needed only for
+source development. See [Local Development](../developer/local-development.md)
+for the optional source setup.
 
 GPU stages need the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 (or an equivalent GPU runtime) so stage containers can see the GPU.
 
-`ffmpeg` / `ffprobe` on the host is required to chunk the NGC VSS sample
-clips and is useful for other local validation. SAM3,
+`ffmpeg` / `ffprobe` on the host is required whenever a video stage runs
+directly on the host (the optional source CLI), and to chunk the NGC VSS sample
+clips. Stage containers ship their own. Install it with
+`apt-get install ffmpeg` on Ubuntu. See the [media policy](#media-policy) for
+codec and GPU requirements. SAM3,
 SeedVR2, and RF-DETR checkpoints are required only for the stages that use
 them. See [Model Provisioning](model-provisioning.md).
 
-## Clone And Sync
+## Clone And Pull
 
 ```bash
-git clone <repo-url>
-cd paidf-auto-labeling
-make sync
+git clone "<repo-url>" cdf-auto-labeling
+cd cdf-auto-labeling
+make pull
 ```
 
-`make sync` installs the workspace packages needed to run services and
-cookbooks.
+`make pull` downloads images; it does not install Python packages. Select only
+needed images using `NGC_IMAGES` as described in [NGC Containers](ngc-containers.md).
+The updated runner needs the Docker CLI inside its image. Until that image is
+published, build it from this checkout after pulling:
+
+```bash
+docker buildx build --load -t cdf-workflow-runner \
+  -f services/workflow_runner/docker/Dockerfile .
+```
 
 Copy tracked cookbooks to `*.local.yaml` before you edit paths. Those
 `*.local.yaml` files are gitignored so machine-specific paths and endpoints
@@ -55,19 +64,15 @@ do not get committed.
 Confirm the workflow-runner entrypoint resolves:
 
 ```bash
-make run SCRIPT=workflow-runner:main ARGS='--help'
+make run ARGS='--help'
 ```
 
-Then confirm the host can compile a cookbook plan without running containers:
-
-```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml --container-dry-run'
-```
-
-A successful dry-run only means the runner and container runtime can parse
-that cookbook. It is not a real labeling run. Tracked configs contain
-placeholders for media, checkpoints, and endpoints.
+For a no-GPU service check, follow the
+[smoke test](experiment-output-layout.md#no-gpu-smoke-test). After configuring
+a local cookbook and staging its inputs, use `--container-dry-run` as shown in
+[Getting Started](getting-started.md). This starts the runner container and
+prints stage commands without starting annotation-stage containers. It does
+not test model inference or endpoint access.
 
 You still need, before [Getting Started](getting-started.md):
 
@@ -83,7 +88,9 @@ You still need, before [Getting Started](getting-started.md):
    with `make pull` — [NGC Containers](ngc-containers.md)
 
 Never put API keys or cloud credentials in cookbook YAML. Export them in the
-shell and pass the variable name with `--container-env`.
+shell and pass the variable name with `--container-env`. Custom variables must
+also be forwarded into the runner; see
+[container mounts and environment](operations-workflow-runner.md#container-launcher-mounts).
 
 ## Limitations
 

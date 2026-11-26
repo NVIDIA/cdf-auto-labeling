@@ -242,3 +242,19 @@ def test_corrupt_pipeline_state_surfaces_error(tmp_path: Path) -> None:
     p.write_text("{not valid json", encoding="utf-8")
     with pytest.raises(Exception):  # noqa: B017 - pydantic-version-agnostic
         read_pipeline_state(tmp_path)
+
+
+def test_not_applicable_emitters_are_removed_not_recorded_as_failures(tmp_path: Path) -> None:
+    artifact = tmp_path / "task" / "mcq.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("{}")
+    update_annotation_export_state(
+        tmp_path, emitter_artifacts={"mcq": artifact, "bcq": None, "open_qa": None}
+    )
+    update_annotation_export_state(
+        tmp_path, emitter_artifacts={"mcq": artifact, "bcq": None}, not_applicable=["open_qa"]
+    )
+    state = read_pipeline_state(tmp_path)
+    assert state.annotation_export is not None
+    outcomes = {e.name: e.success for e in state.annotation_export.emitters}
+    assert outcomes == {"mcq": True, "bcq": False}  # bcq should have written: a failure

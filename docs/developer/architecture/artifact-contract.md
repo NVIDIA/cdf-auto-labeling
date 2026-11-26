@@ -108,6 +108,22 @@ Notes:
 - Reasoning traces inside `mcq.json` / `bcq.json` come from the `visual_qa`
   stage running with `--include-reasoning`, not from a separate reasoning pass.
 
+### 1.3 `instances.json` fields read by crop extraction
+
+Every tracker backend (built in or your own) writes one summary per track to
+`contextual/instances.json`. `--extract-crops` reads these fields:
+
+| Field | Needed for | Meaning |
+| --- | --- | --- |
+| `object_id`, `object_type`, `track_id` | always | joins to `objects.json`; `--crop-classes` filters on `object_type` |
+| `first_frame`, `last_frame` | always | track span in source frames |
+| `detection_score` | `--min-detection-score` > 0 | max per-frame confidence (SAM3 and RF-DETR) |
+| `start_time_s`, `end_time_s` | `--min-track-seconds` > 0 | first and last frame time in seconds |
+
+A track missing a gated field is dropped. The detection log then has one
+WARNING line naming the gate and how many tracks it dropped, for example
+`dropped: 4 missing detection_score`.
+
 ## 2. Overwrite / Reuse Behavior
 
 ### 2.1 Cookbook selection versus in-stage skip

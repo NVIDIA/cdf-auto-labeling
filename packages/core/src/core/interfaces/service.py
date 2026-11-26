@@ -33,6 +33,7 @@ from core.cost_performance import (
     collect_model_usage,
     write_cost_performance_report,
 )
+from core.interfaces.config_args import ServiceArgumentParser
 from core.models import DataEntry
 from core.utils import telemetry
 from core.utils.dev_data_root import DevDataRootCopier
@@ -79,6 +80,16 @@ class ServiceInterface(ABC):
         """
         ...
 
+    native_config = False
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        """Build a parser supporting file defaults and explicit CLI overrides."""
+        parser = ServiceArgumentParser(description=self.description, allow_abbrev=False)
+        self._add_common_args(parser)
+        self.add_service_args(parser)
+        parser.configure(native_config=self.native_config)
+        return parser
+
     def run(self) -> None:
         """
         Entrypoint for the service.
@@ -86,10 +97,7 @@ class ServiceInterface(ABC):
         Parses common and service-specific arguments, loads any requested data entries, optionally
         copies DAFT directories into a dev root, and calls ``execute()``.
         """
-        parser = argparse.ArgumentParser(description=self.description)
-        self._add_common_args(parser)
-        self.add_service_args(parser)
-        args = parser.parse_args()
+        args = self.build_parser().parse_args()
         apply_log_level(level=args.log_level)
         telemetry.setup_telemetry(service_name=self.name)
         self.logger.info(f"Starting Service {self.name} with log level {args.log_level}.")

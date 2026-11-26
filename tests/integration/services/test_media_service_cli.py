@@ -1,51 +1,39 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""E2E tests for the super-resolution service.
-
-Real SeedVR2 upscaling requires GPU model weights, which are out of scope for the
-pre-merge suite. These tests cover the service wiring without heavy inference:
-
-* always-on: ``--disabled`` exits cleanly without touching media.
-* endpoint/ffmpeg-free auto path: skip SR when the input already meets the target
-  resolution (requires ffmpeg to probe a real video fixture).
-"""
+"""Service CLI checks for disabled execution and automatic resolution policy."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from e2e_harness import RunService, entries_payload, require_ffmpeg
+from core import read_pipeline_state
+from service_harness import RunService, entries_payload, generate_vp9_video
 
-pytestmark = pytest.mark.e2e
+pytestmark = pytest.mark.integration
 
 
-def test_super_resolution_disabled_exits_cleanly(
-    run_service: RunService,
-    tmp_path: Path,
+@pytest.mark.parametrize("project", ["super-resolution-service", "detection-and-tracking-service"])
+def test_disabled_service_leaves_inputs_untouched(
+    run_service: RunService, tmp_path: Path, project: str
 ) -> None:
     media_path = tmp_path / "clip.mp4"
     media_path.write_bytes(b"video")
     scene_dir = tmp_path / "scene"
     payload = entries_payload([{"media_path": str(media_path), "data_path": str(scene_dir)}])
-
-    result = run_service("super-resolution-service", ["--disabled", "--input", payload])
-
+    result = run_service(project, ["--disabled", "--input", payload])
     result.assert_ok()
+    assert media_path.read_bytes() == b"video"
+    assert not scene_dir.exists()
 
 
 def test_super_resolution_auto_policy_skips_high_res_input(
-    run_service: RunService,
-    sample_video: Callable[..., Path],
-    tmp_path: Path,
+    run_service: RunService, tmp_path: Path
 ) -> None:
-    require_ffmpeg()
-    media_path = sample_video(tmp_path / "hires.webm", width=1280, height=720)
+    media_path = generate_vp9_video(tmp_path / "hires.webm", width=1280, height=720, seconds=0.25)
     scene_dir = tmp_path / "scene"
     payload = entries_payload([{"media_path": str(media_path), "data_path": str(scene_dir)}])
-
     result = run_service(
         "super-resolution-service",
         [
@@ -61,5 +49,9 @@ def test_super_resolution_auto_policy_skips_high_res_input(
             "warn",
         ],
     )
-
     result.assert_ok()
+    state = read_pipeline_state(scene_dir)
+    assert state.enhanced_media is not None
+    assert state.enhanced_media.success is False
+    assert state.enhanced_media.output_path is None
+    assert "Skipping super-resolution" in result.output

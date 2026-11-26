@@ -40,21 +40,9 @@ Fixed execution order:
 
 ## Dry-Run and Execute Commands
 
-Always dry-run first:
-
-```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml --container-dry-run'
-```
-
-Execute (only after a passing pre-flight and explicit user approval):
-
-```bash
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file cookbooks/video_data_augmentation/configs/pipeline_video.yaml'
-```
-
-Add `--container-build-images` when the runner image needs to be built.
+Configure `cookbooks/video_data_augmentation/configs/pipeline_video.local.yaml`,
+then follow [Container execution](../../SKILL.md#container-execution) for image
+preparation, dry-run, authorization, and output validation.
 
 ## Expected Artifacts
 

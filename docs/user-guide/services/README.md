@@ -52,3 +52,80 @@ useful for debugging one stage in isolation. For a real end-to-end pipeline
 the [workflow runner](../operations-workflow-runner.md) with a
 [cookbook](../samples-and-cookbooks.md) instead of chaining services by hand;
 it resolves stage order, mounts, and shared scene paths for you.
+
+## Configuration files and CLI overrides
+
+Every service accepts `--config-file settings.yaml` (JSON also works).
+For services other than reasoning and PAS, keys match CLI option names, without
+`--`; hyphens and underscores are both accepted. Values keep their types:
+
+```yaml
+# captioning.local.yaml
+input_file: /data/input.jsonl
+vlm_endpoint_url: https://inference-api.nvidia.com/v1
+vlm_model: replace-with-served-model-name
+media_mode: video
+single_window: true
+max_frames: 16
+```
+
+```bash
+python -m captioning_service.main \
+  --config-file captioning.local.yaml --max-frames 8 --no-single-window
+```
+
+These are service arguments, so they work with container entrypoints too; mount
+the configuration and referenced files at paths the container can access.
+Direct Python execution requires the service's dependencies installed.
+Configuration paths have the same meaning as CLI paths: relative paths use the
+process working directory. A workflow-runner config holds runner CLI options;
+`--cookbook-file` remains the separate interface for pipeline cookbooks.
+
+Precedence is **defaults → configuration file → `--set` → explicit named CLI
+flags**. CLI lists replace file lists; repeatable options use YAML/JSON lists.
+Boolean flags support `--no-...` to turn off a file setting. Unknown settings,
+invalid choices, and missing required arguments fail before service execution.
+Credentials remain in environment variables; do not put secrets in configs.
+
+Reasoning and event/person attribute search (PAS) retain their existing task
+configuration formats. Override any task field with repeatable `--set KEY=VALUE`:
+
+```bash
+python -m reasoning_service.main \
+  --input-file input.jsonl --config-file reasoning.local.yaml \
+  --set events.enabled=true --set events.max_tokens=4096 \
+  --set causal_linkage.max_pairs_auto=3 \
+  --llm-endpoint-url https://inference-api.nvidia.com/v1 \
+  --llm-model replace-with-served-model-name
+```
+
+`--set` also works without a config file. Use dotted field names for nested
+settings, JSON for booleans/numbers/lists/objects/null, and plain strings for
+text. Existing task schemas validate these overrides; misspelled fields and
+invalid values are rejected. For example, enable open QA without YAML:
+
+```bash
+python -m reasoning_service.main --input-file input.jsonl \
+  --set open_qa.enabled=true \
+  --set 'open_qa.questions=["What happened in the scene?"]' \
+  --llm-endpoint-url https://inference-api.nvidia.com/v1 \
+  --llm-model replace-with-served-model-name
+```
+
+In reasoning/PAS config files, put service-level CLI settings in an optional
+top-level `cli` mapping, alongside the existing task configuration:
+
+```yaml
+cli:
+  input_file: /data/input.jsonl
+  llm_endpoint_url: https://inference-api.nvidia.com/v1
+  llm_model: replace-with-served-model-name
+reasoning:
+  events:
+    enabled: true
+```
+
+Reasoning's prompt/bank paths in its task configuration remain relative to the
+config file; without a file they use the working directory. CLI overrides of
+those task fields follow that same rule. No automatic task enabling occurs:
+set the corresponding `enabled` field explicitly.

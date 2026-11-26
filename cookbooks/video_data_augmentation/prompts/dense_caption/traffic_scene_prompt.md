@@ -16,4 +16,5 @@ and attached to the described subject.
 
 Do not infer driver intent, legal fault, license plates, identity, hidden causes,
 or events outside the frames. Return concise prose suitable for downstream VQA
-and reasoning.
+and reasoning. Begin directly with the description, with no introduction or
+heading.

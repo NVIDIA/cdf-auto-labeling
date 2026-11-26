@@ -4,7 +4,7 @@
 import hashlib
 import logging
 from pathlib import Path
-from types import TracebackType
+from types import SimpleNamespace, TracebackType
 from typing import Literal
 
 import numpy as np
@@ -12,6 +12,7 @@ import pytest
 from detection_and_tracking.backends import rfdetr
 from detection_and_tracking.backends.rfdetr import _BoostTrackAdapter, _RFDetrRuntime
 from detection_and_tracking.config import DetectionAndTrackingConfig
+from detection_and_tracking.crops import plan_track_crops
 
 
 class _Response:
@@ -276,3 +277,67 @@ class _CaptureConfiguredBoostTrack:
 
     def __init__(self, **kwargs: object) -> None:
         type(self).kwargs = kwargs
+
+
+def test_rfdetr_track_summary_writes_crop_gate_fields() -> None:
+    """RF-DETR instances carry the fields the crop gates read, like SAM3 (CDF-10)."""
+    instances: dict[str, dict[str, object]] = {}
+    for frame_number, time_s, confidence in ((3, 0.3, 0.4), (4, 0.45, 0.9), (9, 1.9, 0.5)):
+        rfdetr._accumulate_track_summary(
+            instances,
+            object_id="person_7",
+            class_name="person",
+            class_id=1,
+            track_id=7,
+            frame_number=frame_number,
+            time_s=time_s,
+            confidence=confidence,
+        )
+
+    summary = instances["person_7"]
+    assert summary["detection_score"] == 0.9
+    assert summary["start_time_s"] == 0.3
+    assert summary["end_time_s"] == 1.9
+    assert summary["confidence_avg"] == pytest.approx(0.6)
+    assert (summary["first_frame"], summary["last_frame"], summary["frame_count"]) == (3, 9, 3)
+
+    objects = {
+        "frames": [
+            {
+                "frame_number": n,
+                "width": 64,
+                "height": 64,
+                "instances": [{"object_id": "person_7", "bounding_box_2d_tight": [4, 4, 40, 60]}],
+            }
+            for n in (3, 4, 9)
+        ]
+    }
+    plans = plan_track_crops(
+        objects,
+        {"instances": [summary]},
+        crop_classes=("person",),
+        min_detection_score=0.3,
+        min_track_seconds=1.0,
+    )
+    assert [plan.track_id for plan in plans] == [7]
+
+
+@pytest.mark.parametrize("fps, fallback", [(10.0, 0.3), (None, 0.0)])
+def test_rfdetr_frames_prefer_presentation_time(
+    monkeypatch: pytest.MonkeyPatch, fps: float | None, fallback: float
+) -> None:
+    """VFR timestamps survive the reader; only absent timestamps use frame rate."""
+    runtime = _RFDetrRuntime.__new__(_RFDetrRuntime)
+    runtime.cv2 = runtime.np = None
+
+    def decode(*args: object, **kwargs: object) -> SimpleNamespace:
+        assert kwargs["with_timestamps"] is True
+        return SimpleNamespace(
+            stream=SimpleNamespace(fps=fps, width=16, height=16),
+            frames=iter([None] * 4),
+            timestamps=[0.0, 0.1, 1.7, None],
+        )
+
+    monkeypatch.setattr(rfdetr, "decode_video_bgr", decode)
+    frames = list(runtime._iter_frames(Path("vfr.mp4")))
+    assert [frame[2] for frame in frames] == [0.0, 0.1, 1.7, fallback]

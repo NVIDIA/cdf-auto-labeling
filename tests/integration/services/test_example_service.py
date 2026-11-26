@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""E2E smoke test for the example service (always-on baseline)."""
+"""CLI integration test for the example service (always-on baseline)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import json
 from pathlib import Path
 
 import pytest
-from e2e_harness import RunService
+from service_harness import RunService
 
-pytestmark = pytest.mark.e2e
+pytestmark = pytest.mark.integration
 
 
 def test_example_service_seeds_scene(run_service: RunService, tmp_path: Path) -> None:

@@ -10,6 +10,13 @@ authors = [
 dependencies = [
     "core",
     "daft-validation",
+    "super-resolution",
+]
+
+[project.optional-dependencies]
+# SeedVR2 inference stack (torch, diffusers, ...). The service image installs it;
+# `--disabled` and `--help` runs do not need it.
+seedvr2 = [
     "super-resolution[seedvr2]",
 ]
 

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""E2E test for the training-export service (always-on).
+"""CLI integration test for the training-export service (always-on).
 
 Builds a completed DAFT scene and exports it to a training dataset format. No GPU,
 ffmpeg, or model endpoints are required.
@@ -14,9 +14,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from e2e_harness import RunService, entries_payload
+from service_harness import RunService, entries_payload
 
-pytestmark = pytest.mark.e2e
+pytestmark = pytest.mark.integration
 
 
 def test_training_export_writes_cosmos_dataset(

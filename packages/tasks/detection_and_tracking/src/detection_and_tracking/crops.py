@@ -121,9 +121,13 @@ def plan_track_crops(
     min_crop_size: int = 0,
     min_detection_score: float = 0.0,
     min_track_seconds: float = 0.0,
+    logger: logging.Logger | None = None,
 ) -> list[TrackCropPlan]:
     """
-    Build per-track crop plans from canonical tracking artifacts (pure).
+    Build per-track crop plans from canonical tracking artifacts.
+
+    Apart from one summary log line naming how many tracks each gate dropped (sent
+    to ``logger`` when given), this has no side effects.
 
     Args:
         objects_payload: Parsed ``objects.json`` (``{"frames": [...]}``).
@@ -139,6 +143,8 @@ def plan_track_crops(
             the gate). Mirrors the legacy v1 ``min_track_seconds`` gate. Apply
             only when planning over full videos; leave disabled for already-short
             pre-chunked clips where it would drop legitimate people.
+        logger: Optional logger for the per-gate drop summary. It logs a WARNING when
+            a gate dropped tracks because ``instances.json`` lacks the gated field.
 
     Returns:
         One ``TrackCropPlan`` per kept track that has at least one valid crop.
@@ -168,20 +174,31 @@ def plan_track_crops(
             boxes_by_object.setdefault(object_id, {})[frame_number] = (box, width, height)
 
     plans: list[TrackCropPlan] = []
+    dropped = dict.fromkeys(_CROP_GATES, 0)
     for object_id, summary in instances.items():
         object_type = str(summary.get("object_type", ""))
         if wanted and object_type not in wanted:
+            dropped["class filter"] += 1
             continue
         if min_detection_score > 0.0:
-            score = _optional_score(summary.get("detection_score"))
-            if score is None or score < min_detection_score:
+            score = _track_score(summary)
+            if score is None:
+                dropped["missing detection_score"] += 1
+                continue
+            if score < min_detection_score:
+                dropped["below min_detection_score"] += 1
                 continue
         if min_track_seconds > 0.0:
             duration = _duration(summary)
-            if duration is None or duration < min_track_seconds:
+            if duration is None:
+                dropped["missing start_time_s/end_time_s"] += 1
+                continue
+            if duration < min_track_seconds:
+                dropped["below min_track_seconds"] += 1
                 continue
         per_frame = boxes_by_object.get(object_id)
         if not per_frame:
+            dropped["no boxes in objects.json"] += 1
             continue
         selected = _select_frames(
             per_frame,
@@ -190,20 +207,54 @@ def plan_track_crops(
             min_crop_size=min_crop_size,
         )
         if not selected:
+            dropped["no valid crop frame"] += 1
             continue
         plans.append(
             TrackCropPlan(
                 track_id=int(summary.get("track_id", 0)),
                 object_id=object_id,
                 object_type=object_type,
-                detection_score=_optional_score(summary.get("detection_score")),
+                detection_score=_track_score(summary),
                 first_frame=int(summary.get("first_frame", selected[0].frame_number)),
                 last_frame=int(summary.get("last_frame", selected[-1].frame_number)),
                 duration_sec=_duration(summary),
                 frames=selected,
             )
         )
+    if logger is not None and any(dropped.values()):
+        _log_crop_gates(logger, considered=len(instances), kept=len(plans), dropped=dropped)
     return plans
+
+
+# Gates applied by ``plan_track_crops``, in order. A track missing a gated field
+# means the tracker backend did not write it to instances.json.
+_CROP_GATES = (
+    "class filter",
+    "missing detection_score",
+    "below min_detection_score",
+    "missing start_time_s/end_time_s",
+    "below min_track_seconds",
+    "no boxes in objects.json",
+    "no valid crop frame",
+)
+_MISSING_FIELD_GATES = ("missing detection_score", "missing start_time_s/end_time_s")
+
+
+def _log_crop_gates(
+    logger: logging.Logger, *, considered: int, kept: int, dropped: dict[str, int]
+) -> None:
+    """Report crop rejection counts, warning when required tracker fields are missing."""
+    reasons = ", ".join(f"{count} {gate}" for gate, count in dropped.items() if count)
+    message = "Crop planning: %d track(s) considered, %d kept; dropped: %s"
+    if any(dropped[gate] for gate in _MISSING_FIELD_GATES):
+        logger.warning(
+            message + ". The tracker backend must write the gated fields to instances.json.",
+            considered,
+            kept,
+            reasons,
+        )
+    else:
+        logger.info(message, considered, kept, reasons)
 
 
 def write_crops(
@@ -306,6 +357,7 @@ def extract_track_crops(
         min_crop_size=config.min_crop_size,
         min_detection_score=config.min_detection_score,
         min_track_seconds=config.min_track_seconds,
+        logger=logger,
     )
     if not plans:
         logger.info("Crop extraction produced no track plans for %s", media_path)
@@ -383,6 +435,18 @@ def _optional_score(value: Any) -> float | None:
     if value is None:
         return None
     return round(as_float(value, 0.0), 4)
+
+
+def _track_score(summary: dict[str, Any]) -> float | None:
+    """Return a track's score from either backend's ``instances.json`` schema.
+
+    SAM3 writes ``detection_score``; RF-DETR writes ``confidence_avg``. Reading
+    only the former dropped every RF-DETR track under ``min_detection_score``.
+    """
+    score = summary.get("detection_score")
+    if score is None:
+        score = summary.get("confidence_avg")
+    return _optional_score(score)
 
 
 def _duration(summary: dict[str, Any]) -> float | None:

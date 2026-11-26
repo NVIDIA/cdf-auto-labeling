@@ -99,7 +99,7 @@ def test_load_config_rejects_non_object(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     path.write_text("- invalid\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="must be an object"):
+    with pytest.raises(ValueError, match="must be a JSON/YAML object with string keys"):
         _load_config(path)
 
 

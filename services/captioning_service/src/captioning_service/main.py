@@ -137,6 +137,12 @@ class CaptioningService(ServiceInterface):
             help="Video window duration in seconds when --window-frames is 0.",
         )
         captioning.add_argument(
+            "--min-tail-seconds",
+            type=float,
+            default=0.0,
+            help="Skip a shorter final partial window in seconds mode; retain short whole clips.",
+        )
+        captioning.add_argument(
             "--window-frames",
             type=int,
             default=256,
@@ -283,6 +289,7 @@ def build_config(args: argparse.Namespace) -> CaptioningConfig:
         window_seconds=args.window_seconds,
         window_frames=args.window_frames,
         remainder_threshold=args.remainder_threshold,
+        min_tail_seconds=getattr(args, "min_tail_seconds", 0.0),
         single_window=args.single_window,
         sampling_fps=args.sampling_fps,
         max_frames=args.max_frames,

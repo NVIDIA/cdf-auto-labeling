@@ -71,7 +71,7 @@ COPY scripts ./scripts
 RUN /usr/bin/python3.12 -m venv --system-site-packages /app/.venv
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --package "${PACKAGE_NAME}" \
+    uv sync --frozen --no-editable --package "${PACKAGE_NAME}" --extra seedvr2 \
         --no-install-package av \
         --no-install-package torch \
         --no-install-package torchvision \
@@ -98,10 +98,13 @@ RUN /app/.venv/bin/python scripts/media_toolchain.py python-install \
 # Build FlashAttention against the PyTorch 26.07 CUDA 13.3 stack. ninja is
 # installed above and PyTorch honors MAX_JOBS to parallelize native compilation.
 # Keep the job count bounded to avoid exhausting memory on CI runners.
+# --no-deps: flash-attn depends on torch, and uv would otherwise install PyPI
+# torch into the venv, shadowing the base image's PyTorch (see the venv note
+# above). einops, its other dependency, comes from the seedvr2 extra.
 RUN --mount=type=cache,target=/root/.cache/uv \
     CUDA_HOME=/usr/local/cuda \
     MAX_JOBS=4 \
-    uv pip install --verbose --python /app/.venv/bin/python --no-build-isolation \
+    uv pip install --verbose --python /app/.venv/bin/python --no-build-isolation --no-deps \
         "flash-attn==${FLASH_ATTN_VERSION}"
 
 RUN LD_LIBRARY_PATH=/opt/media-toolchain/lib \
@@ -127,6 +130,12 @@ RUN set -eux; \
     test -f /opt/seedvr/pos_emb.pt; \
     test -f /opt/seedvr/neg_emb.pt; \
     rm -rf /opt/seedvr/.git
+
+# Load the SeedVR2 window module and both upstream variants, so a base-image
+# change that breaks their imports fails the build instead of the first SR job.
+RUN LD_LIBRARY_PATH=/opt/media-toolchain/lib PYTHONPATH=/opt/seedvr SEEDVR_ROOT=/opt/seedvr \
+    /app/.venv/bin/python -c "import super_resolution.seedvr2_window as w; \
+[w._resolve_variant_module(v) for v in ('seedvr2_3b', 'seedvr2_7b')]"
 
 FROM ${BASE_IMAGE} AS runtime
 

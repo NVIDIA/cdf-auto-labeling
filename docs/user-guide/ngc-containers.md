@@ -40,7 +40,7 @@ hosts or CI runners.
 2. Export the key in your shell. Do not commit it or paste it into a cookbook.
 
    ```bash
-   export NGC_API_KEY=<your-key>
+   export NGC_API_KEY="<your-key>"
    ```
 
 3. Log in. The username is the literal string `$oauthtoken`, so keep it in
@@ -57,9 +57,10 @@ Run `docker logout nvcr.io` to remove the stored credential.
 
 ## Use Pulled Images With The Workflow Runner
 
-The workflow runner does not pull images. It starts each stage with the bare
-image name (for example `cdf-captioning-service`) and expects that image to be
-present locally. Pick one of these two approaches.
+By default, the workflow runner starts each stage with a local image name
+(for example `cdf-captioning-service`). Prepare those images before running;
+otherwise Docker may try to pull a missing image under that name. Pick one of
+these two approaches.
 
 ### Option A: `make pull` (recommended)
 
@@ -71,7 +72,8 @@ make pull
 ```
 
 By default it pulls all 12 images at the current release tag. Pull only the
-stages your cookbook enables with `NGC_IMAGES`:
+stages your cookbook enables with `NGC_IMAGES` (prepare the runner image too,
+as described in [Installation](installation.md#clone-and-pull)):
 
 ```bash
 make pull NGC_IMAGES="cdf-captioning-service cdf-visual-qa-service cdf-reasoning-service cdf-detection-and-tracking-sam3-service"
@@ -84,10 +86,12 @@ make pull NGC_IMAGES="cdf-captioning-service cdf-visual-qa-service cdf-reasoning
 | `NGC_REGISTRY` | `nvcr.io/nvidia` | Registry path the images are pulled from |
 | `CONTAINER_RUNTIME` | `docker` | Set to `podman` to pull with Podman |
 
+`CONTAINER_RUNTIME` selects the pull command only; `make run` uses Docker.
 The target stops at the first image that fails to pull. It does not log in,
 so run the login step above first if you want authenticated pulls. Once the
-tagged images exist, `--container-ensure-images` finds them and skips the
-local build.
+tagged images exist, `make run` can launch the selected stages.
+For this source revision, follow [Installation](installation.md#clone-and-pull)
+to build the updated runner until it is published.
 
 ### Option B: Point stages at the registry references
 
@@ -106,9 +110,8 @@ stage on the command line with `--captioning-image`,
 `--tracking-image`, `--visual-qa-image`, `--reasoning-image`,
 `--training-export-image`, `--pas-image`, `--grounding-2d-image`,
 `--referring-expressions-image`, or `--sr-image`. Command-line flags take
-precedence over the cookbook. Do not combine registry
-references with `--container-build-images`, because that flag rebuilds every
-stage image from source.
+precedence over the cookbook. Build flags such as `--container-build-images`
+apply only to the optional host source CLI, not `make run`.
 
 ## Verify
 
@@ -116,8 +119,8 @@ Confirm the images are present, then dry-run the cookbook:
 
 ```bash
 docker image ls 'cdf-*'
-make run SCRIPT=workflow-runner:main \
-  ARGS='--cookbook-file <cookbook.local.yaml> --container-dry-run'
+make run \
+  ARGS='--cookbook-file path/to/cookbook.local.yaml --container-dry-run'
 ```
 
 The dry run prints the `docker run` command for every stage. Check that each

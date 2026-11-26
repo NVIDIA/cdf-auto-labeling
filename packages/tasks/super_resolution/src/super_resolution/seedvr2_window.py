@@ -70,7 +70,7 @@ from data.image.transforms.divisible_crop import DivisibleCrop
 from data.image.transforms.na_resize import NaResize
 from data.video.transforms.rearrange import Rearrange
 from einops import rearrange
-from torchvision.io import read_image, write_video
+from torchvision.io import read_image
 from torchvision.transforms import Compose, Lambda, Normalize
 from tqdm import tqdm
 
@@ -81,6 +81,7 @@ from super_resolution.media_formats import (
     sr_output_name_for_input,
     sr_supported_extensions_message,
 )
+from super_resolution.seedvr2_compat import install_torchvision_video_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -248,13 +249,13 @@ def _write_output(sample_tchw_01: torch.Tensor, filename: str, fps: float) -> No
     sample_u8 = (sample_thwc * 255.0).round().clamp(0, 255).to(torch.uint8)
     sample = np.asarray(sample_u8.detach().cpu().numpy(), dtype=np.uint8)
     os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
-    if sample.shape[0] == 1:
-        mediapy.write_image(filename, sample.squeeze(0))
-    else:
-        try:
-            mediapy.write_video(filename, sample, fps=float(fps))
-        except Exception:
-            write_video(filename, torch.from_numpy(sample), fps=float(fps))
+    if sample.shape[0] != 1:
+        # Videos are written by _write_video_streaming_from_segments_u8 (VP9 via
+        # PyAV, per the codec policy). torchvision.io.write_video no longer exists
+        # in the base image's TorchVision, and its H.264 default is not allowed.
+        msg = f"_write_output writes single images only; got {sample.shape[0]} frames."
+        raise ValueError(msg)
+    mediapy.write_image(filename, sample.squeeze(0))
 
 
 def _safe_stem(path: str) -> str:
@@ -392,6 +393,7 @@ def _resolve_variant_module(variant: str) -> types.ModuleType:
         )
 
     module_name, rel_py = mapping[variant]
+    install_torchvision_video_fallback()
     this_dir = os.path.dirname(os.path.abspath(__file__))
     py_path = os.path.join(this_dir, rel_py)
     seedvr_root = str(os.getenv("SEEDVR_ROOT", "")).strip()
@@ -754,6 +756,7 @@ def generation_loop(
                             sample = module.wavelet_reconstruction(
                                 sample.to("cpu"), inp_tchw[: sample.size(0)].to("cpu")
                             )
+                            del inp_tchw
                         else:
                             sample = sample.to("cpu")
                         out_01 = sample.clip(-1, 1).mul_(0.5).add_(0.5).float()
@@ -764,6 +767,8 @@ def generation_loop(
                         torch.save(out_u8.contiguous().cpu(), seg_path)
                         segment_paths.append(seg_path)
 
+                    # empty_cache cannot release tensors still referenced by the previous window.
+                    del samples, cond_latents, cond_cut, cond
                     _cleanup_cuda()
 
                 if get_sequence_parallel_rank() == 0:

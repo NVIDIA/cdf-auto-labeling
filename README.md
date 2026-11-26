@@ -25,20 +25,31 @@ Use this repo when you need to:
 
 ### Prerequisites
 
-- Python 3.12 or newer
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- GNU Make
+Use a Linux host with Docker and GNU Make. GPU stages additionally need the
+NVIDIA driver and NVIDIA Container Toolkit. Python and model libraries
+are packaged inside the containers; no host `.venv` is required.
 
-Container workflows also require Docker or Podman. GPU stages require a
-compatible GPU runtime, such as Docker with the NVIDIA Container Toolkit, plus
-the checkpoints and VLM/LLM endpoints selected by the cookbook.
+### Pull images and start the runner
 
-### Run a sample workflow
+Pull only the stage images your cookbook needs; `make pull` defaults to all
+images. See [NGC Containers](docs/user-guide/ngc-containers.md).
 
 ```bash
-make sync
-make run SCRIPT=workflow-runner:main ARGS='--help'
+make pull
 ```
+
+The runner image must include the Docker CLI. For this source revision, build
+the updated runner after pulling images until it is published in NGC:
+
+```bash
+docker buildx build --load -t cdf-workflow-runner \
+  -f services/workflow_runner/docker/Dockerfile .
+make run ARGS='--help'
+```
+
+The launcher mounts the repository at its host path and uses the host Docker
+socket to start stage containers. For data outside the repository, see
+[runner mounts](docs/user-guide/operations-workflow-runner.md#container-launcher-mounts).
 
 Copy the nearest tracked cookbook to a gitignored `*.local.yaml`, replace its
 media, output, model-cache, and endpoint placeholders, then inspect the
@@ -51,10 +62,10 @@ cp cookbooks/video_data_augmentation/configs/pipeline_video.yaml \
 CONFIG=cookbooks/video_data_augmentation/configs/pipeline_video.local.yaml
 
 ARGS="--cookbook-file ${CONFIG} --container-dry-run" \
-  make run SCRIPT=workflow-runner:main
+  make run
 
 ARGS="--cookbook-file ${CONFIG} --container-user auto" \
-  make run SCRIPT=workflow-runner:main
+  make run
 ```
 
 Full walkthrough: [Getting Started](docs/user-guide/getting-started.md).
@@ -68,13 +79,9 @@ Remote paths also require
 
 ### Contribute to this repository
 
-After `make sync`, run the contributor checks before you change code:
-
-```bash
-make lint-check
-make mypy
-make test
-```
+Developers use the same containers and cookbooks. Edit the code, rebuild the
+changed service image with Docker, then rerun the cookbook with `make run`.
+Direct Docker builds need no host Python; the `make build` helper needs Python 3.12+.
 
 Details: [Local Development](docs/developer/local-development.md). Model-client
 internals for new VLM/LLM wiring:
@@ -85,7 +92,8 @@ internals for new VLM/LLM wiring:
 ![CDF Auto-Labeling Architecture Diagram](./docs/assets/architecture_diagram_cdf_ual.png)
 
 Services package and expose reusable task implementations. The workflow runner
-launches selected services in a fixed relative order over a shared DAFT scene.
+launches selected services in canonical order, or the cookbook graph's dependency
+order, over a shared DAFT scene.
 
 ```mermaid
 flowchart LR
@@ -159,48 +167,17 @@ contract.
 
 ## Running Services
 
-Use the interactive selector or specify a registered script:
+Use a cookbook to choose which service containers run:
 
 ```bash
-make run
+make run ARGS='--cookbook-file path/to/cookbook.local.yaml'
+# Or inspect one service:
 make run SCRIPT=captioning-service:main ARGS='--help'
-make run SCRIPT=example-service:main ARGS='--input-file payloads/simple.jsonl'
 ```
 
-Scripts are discovered from `[project.scripts]` in package `pyproject.toml`
-files. Interactive runs offer presets from `[tool.run.default-args]`; explicit
-`ARGS` overrides the preset and is forwarded unchanged to the selected script.
-
-For larger inputs, prefer `--input-file` over inline JSON. For development runs
-that must preserve the source scene, pass `--dev-data-root <path-or-url>` to a
-service built on the shared service interface. The service copies each input
-scene to `<root>/<entry.id>`, replacing an existing ID-named copy, and runs
-against that copy. A missing local source starts as an empty scene; the
-development root may be local or supported remote storage.
-
-Build registered images interactively or by target:
-
-```bash
-make build
-make build IMAGE=captioning-service:main
-```
-
-Image targets are registered in service `pyproject.toml` files. See
-[Stage Images](docs/user-guide/operations-workflow-runner.md#stage-images)
-for the complete target list.
-`make build` discovers them from `[tool.build.images]`, and registered build
-commands run from the repository root.
-
-To skip the build, pull the prebuilt images from NGC. `make pull` tags each
-one with the local name the workflow runner expects:
-
-```bash
-make pull
-make pull NGC_IMAGES="cdf-captioning-service cdf-visual-qa-service"
-```
-
-See [NGC Containers](docs/user-guide/ngc-containers.md) for catalog links,
-`nvcr.io` login, and per-stage image overrides.
+`make run` without arguments displays help. It always uses Docker.
+To test a change, rebuild the affected image and run the same cookbook again.
+See [Local Development](docs/developer/local-development.md) for the build/test loop.
 
 ## Repository Layout
 
@@ -222,7 +199,7 @@ skills/                           # repository-local agent guidance
 
 ```bash
 make help        # list supported targets
-make sync        # install all workspace packages and extras
+make sync        # install all workspace packages and extras (several GB)
 make lint        # format and fix lint findings
 make lint-check  # check formatting and lint without changes
 make mypy        # run static type checks

@@ -345,3 +345,35 @@ def test_post_json_rejects_non_http_url() -> None:
             retries=0,
             retry_backoff_s=0.1,
         )
+
+
+@pytest.mark.parametrize("response_format", [None, {"type": "json_object"}])
+def test_openai_client_passes_response_format_only_when_set(
+    monkeypatch: pytest.MonkeyPatch, response_format: dict[str, Any] | None
+) -> None:
+    """Forward structured-output constraints only when the caller supplies them."""
+    calls: list[dict[str, Any]] = []
+
+    class _FakeCompletions:
+        """Capture completion arguments and return a minimal JSON response."""
+
+        def create(self, **kwargs: Any) -> SimpleNamespace:
+            """Record the request payload without contacting an endpoint."""
+            calls.append(kwargs)
+            message = SimpleNamespace(content="{}")
+            return SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop", message=message)])
+
+    class _FakeOpenAI:
+        """Provide the chat interface used by the client under test."""
+
+        def __init__(self, **_kwargs: Any) -> None:
+            """Attach the completion recorder to the fake client."""
+            self.chat = SimpleNamespace(completions=_FakeCompletions())
+
+    monkeypatch.setattr("core.model_clients.openai_compatible.OpenAI", _FakeOpenAI)
+    client = OpenAICompatibleClient(endpoint_url="http://model.test/v1", model="m", retries=0)
+
+    client.generate(ChatRequest(prompt="Run.", response_format=response_format))
+
+    assert calls[0].get("response_format") == response_format
+    assert ("response_format" in calls[0]) is (response_format is not None)

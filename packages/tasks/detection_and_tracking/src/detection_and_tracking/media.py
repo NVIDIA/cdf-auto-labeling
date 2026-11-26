@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,19 +24,28 @@ class DecodedBgrVideo:
 
     stream: VideoStreamInfo
     frames: Iterator[Any]
+    timestamps: list[float | None] = field(default_factory=list)
 
 
-def decode_video_bgr(media_path: Path, *, cv2: Any, np: Any) -> DecodedBgrVideo:
+def decode_video_bgr(
+    media_path: Path, *, cv2: Any, np: Any, with_timestamps: bool = False
+) -> DecodedBgrVideo:
     """Validate and stream an H.264, VP9, or MPEG-4 Part 2 video as BGR frames."""
     plan = prepare_video_decode(media_path)
+    timestamps: list[float | None] = []
 
     def iter_frames() -> Iterator[Any]:
         shape = (plan.stream.height, plan.stream.width, 3)
-        for payload in iter_decoded_rgb24_frames(media_path, plan):
+        payloads = (
+            iter_decoded_rgb24_frames(media_path, plan, timestamps=timestamps)
+            if with_timestamps
+            else iter_decoded_rgb24_frames(media_path, plan)
+        )
+        for payload in payloads:
             rgb = np.frombuffer(payload, dtype=np.uint8).reshape(shape)
             yield cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-    return DecodedBgrVideo(stream=plan.stream, frames=iter_frames())
+    return DecodedBgrVideo(stream=plan.stream, frames=iter_frames(), timestamps=timestamps)
 
 
 def iter_selected_video_frames_bgr(

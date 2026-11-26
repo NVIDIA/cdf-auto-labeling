@@ -19,5 +19,4 @@ register_tracker(
 )
 register_tracker("sam3", lambda logger, config: SAM3Tracker(logger, config))
 
-
 __all__ = ["RFDetrTracker", "SAM3Tracker", "StubTracker"]

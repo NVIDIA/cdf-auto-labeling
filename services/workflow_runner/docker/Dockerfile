@@ -7,7 +7,7 @@
 
 FROM nvcr.io/nvidia/base/ubuntu:noble-20260610@sha256:a6015cf73597a174b8624ef0a9f78937f79a0862c078df4922dc35f26cec8fad AS builder
 
-ARG PACKAGE_NAME
+ARG PACKAGE_NAME=workflow-runner
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -48,6 +48,9 @@ RUN apt-get update \
         ca-certificates \
         python3.12 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=docker:27.5.1-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c /usr/local/bin/docker /usr/local/bin/docker
+RUN docker --version
 
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/scripts/prune_runtime_python.sh /tmp/prune-runtime-python

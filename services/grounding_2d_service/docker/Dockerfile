@@ -18,7 +18,10 @@ RUN apt-get update \
 
 COPY --from=ghcr.io/astral-sh/uv:0.5.14@sha256:f0786ad49e2e684c18d38697facb229f538a6f5e374c56f54125aabe7d14b3f7 /uv /uvx /bin/
 
-ENV UV_COMPILE_BYTECODE=1 \
+# Match the sibling service images. Parallel bytecode compilation opens one
+# worker per CPU and exhausts the build container's file descriptors on
+# many-core hosts ("No file descriptors available").
+ENV UV_COMPILE_BYTECODE=0 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0 \
     UV_NO_DEV=1 \

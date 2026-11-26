@@ -152,6 +152,31 @@ def test_plan_track_crops_filters_min_detection_score() -> None:
     assert len(kept) == 1
 
 
+def test_plan_track_crops_reads_rfdetr_confidence_avg() -> None:
+    # RF-DETR instances carry confidence_avg instead of SAM3's detection_score.
+    instances = _instances_payload()
+    rfdetr = instances["instances"][0]
+    rfdetr["confidence_avg"] = rfdetr.pop("detection_score")
+
+    kept = plan_track_crops(
+        _objects_payload(),
+        instances,
+        crop_classes=("person",),
+        min_detection_score=0.5,
+    )
+    assert len(kept) == 1
+    assert kept[0].detection_score == 0.8552
+    assert (
+        plan_track_crops(
+            _objects_payload(),
+            instances,
+            crop_classes=("person",),
+            min_detection_score=0.9,
+        )
+        == []
+    )
+
+
 def test_plan_track_crops_filters_min_track_seconds() -> None:
     # Fixture track spans start_time_s=0.0 .. end_time_s=5.667 (duration 5.667s).
     assert (
@@ -170,6 +195,58 @@ def test_plan_track_crops_filters_min_track_seconds() -> None:
         min_track_seconds=3.0,
     )
     assert len(kept) == 1
+
+
+@pytest.mark.parametrize(
+    ("missing", "min_detection_score", "min_track_seconds", "gate"),
+    [
+        (("detection_score",), 0.5, 0.0, "1 missing detection_score"),
+        (("start_time_s", "end_time_s"), 0.0, 1.0, "1 missing start_time_s/end_time_s"),
+    ],
+)
+def test_plan_track_crops_warns_with_gate_and_count_for_missing_fields(
+    caplog: pytest.LogCaptureFixture,
+    missing: tuple[str, ...],
+    min_detection_score: float,
+    min_track_seconds: float,
+    gate: str,
+) -> None:
+    """Identify missing tracker fields and count the tracks they exclude."""
+    instances = _instances_payload()
+    for field in missing:
+        del instances["instances"][0][field]
+    logger = logging.getLogger("test.crops.gates")
+
+    with caplog.at_level(logging.INFO, logger="test.crops.gates"):
+        plans = plan_track_crops(
+            _objects_payload(),
+            instances,
+            crop_classes=("person",),
+            min_detection_score=min_detection_score,
+            min_track_seconds=min_track_seconds,
+            logger=logger,
+        )
+
+    assert plans == []
+    [record] = caplog.records
+    assert record.levelno == logging.WARNING
+    assert "1 track(s) considered, 0 kept" in record.getMessage()
+    assert gate in record.getMessage()
+
+
+def test_plan_track_crops_logs_value_gates_at_info(caplog: pytest.LogCaptureFixture) -> None:
+    """Keep expected score and duration filtering at informational severity."""
+    logger = logging.getLogger("test.crops.gates")
+
+    with caplog.at_level(logging.INFO, logger="test.crops.gates"):
+        plans = plan_track_crops(
+            _objects_payload(), _instances_payload(), crop_classes=("forklift",), logger=logger
+        )
+
+    assert plans == []
+    [record] = caplog.records
+    assert record.levelno == logging.INFO
+    assert "dropped: 1 class filter" in record.getMessage()
 
 
 class _FakeCv2:

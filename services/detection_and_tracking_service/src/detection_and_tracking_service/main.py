@@ -364,9 +364,7 @@ class DetectionAndTrackingService(ServiceInterface):
         )
 
     def run(self) -> None:
-        parser = argparse.ArgumentParser(description=self.description)
-        self._add_common_args(parser)
-        self.add_service_args(parser)
+        parser = self.build_parser()
         args = parser.parse_args()
         if not bool(getattr(args, "disabled", False)):
             args.tracker = _validate_tracker_arg(parser, args.tracker)
@@ -466,7 +464,7 @@ def _validate_tracker_arg(parser: argparse.ArgumentParser, tracker: object) -> T
     if tracker_name not in trackers:
         choices = ", ".join(trackers) or "<none>"
         parser.error(f"Invalid tracker: {tracker_name}. Available trackers: {choices}")
-    return cast(TrackerKindValue, tracker_name)
+    return tracker_name
 
 
 def _float_0_to_1(value: str) -> float:

@@ -6,13 +6,11 @@
 from __future__ import annotations
 
 import argparse
-import json
 import tempfile
 import time
 from pathlib import Path
-from typing import override
+from typing import Any, override
 
-import yaml
 from core import (
     DataEntry,
     ModelUsageSnapshot,
@@ -22,6 +20,7 @@ from core import (
     write_cost_performance_report,
 )
 from core.interfaces import ServiceInterface
+from core.interfaces.config_args import override_config, read_config
 from core.pipelines import LinearPipeline
 from core.policy import EmptyOutputPolicy
 from core.tasks import SequentialTask
@@ -38,6 +37,8 @@ SERVICE_CONFIG_SECTION_KEYS = (
 
 class EventAndPersonAttributeSearchService(ServiceInterface):
     """Run only the Person Attribute Search assembly/query task."""
+
+    native_config = True
 
     def __init__(self) -> None:
         super().__init__(
@@ -82,7 +83,8 @@ class EventAndPersonAttributeSearchService(ServiceInterface):
         )
         parser.add_argument(
             "--use-template-for-medium",
-            action="store_true",
+            action=argparse.BooleanOptionalAction,
+            default=None,
             help="Use templates for medium queries in the per-tier LLM mode.",
         )
         parser.add_argument(
@@ -126,15 +128,19 @@ class EventAndPersonAttributeSearchService(ServiceInterface):
         with tempfile.TemporaryDirectory(prefix="pas_inputs_") as temp_dir:
             staging_root = Path(temp_dir)
             if args.config_file:
-                local_config = self.storage.download_if_remote(
-                    args.config_file,
-                    str(staging_root / "config"),
-                    is_file=True,
-                )
-                config = _load_config(Path(local_config).expanduser().resolve())
+                snapshot = getattr(args, "config_snapshot", None)
+                local_config = args.config_file
+                if snapshot is None:
+                    local_config = self.storage.download_if_remote(
+                        str(Path(args.config_file).expanduser())
+                        if not self.storage.is_remote_storage_url(args.config_file)
+                        else args.config_file,
+                        str(staging_root / "config"),
+                        is_file=True,
+                    )
+                config = _load_config(Path(local_config), args=args, snapshot=snapshot)
             else:
-                config = PersonAttributeSearchConfig()
-            config = _apply_cli_overrides(config, args)
+                config = _apply_cli_overrides({}, args)
             config = _stage_remote_inputs(
                 config,
                 storage=self.storage,
@@ -215,13 +221,22 @@ class _MeasuredTask(SequentialTask):
         return output
 
 
-def _load_config(path: Path) -> PersonAttributeSearchConfig:
+def _load_config(
+    path: Path,
+    overrides: list[str] | None = None,
+    *,
+    args: argparse.Namespace | None = None,
+    snapshot: dict[str, Any] | None = None,
+) -> PersonAttributeSearchConfig:
     """Read direct, nested PAS, or legacy composite configuration."""
-    raw = path.read_text(encoding="utf-8")
-    loaded = json.loads(raw) if path.suffix.lower() == ".json" else yaml.safe_load(raw)
+    if snapshot is not None:
+        loaded = dict(snapshot)
+    else:
+        loaded = read_config(str(path))
     if not isinstance(loaded, dict):
         raise ValueError(f"Person Attribute Search config must be an object: {path}")
 
+    loaded.pop("cli", None)
     section: object = loaded
     for key in SERVICE_CONFIG_SECTION_KEYS:
         if key in loaded:
@@ -233,11 +248,14 @@ def _load_config(path: Path) -> PersonAttributeSearchConfig:
         section = loaded["person_attribute_search"]
     if not isinstance(section, dict):
         raise ValueError(f"Person Attribute Search config section must be an object: {path}")
-    return PersonAttributeSearchConfig.model_validate(section)
+    merged = override_config(section, overrides or [])
+    if args is not None:
+        return _apply_cli_overrides(merged, args)
+    return PersonAttributeSearchConfig.model_validate(merged)
 
 
 def _apply_cli_overrides(
-    config: PersonAttributeSearchConfig,
+    config: PersonAttributeSearchConfig | dict[str, Any],
     args: argparse.Namespace,
 ) -> PersonAttributeSearchConfig:
     """Apply explicit CLI options to PAS configuration."""
@@ -262,13 +280,20 @@ def _apply_cli_overrides(
         value = getattr(args, argument, None)
         if value is not None:
             updates[field] = value
-    if getattr(args, "use_template_for_medium", False):
-        updates["use_template_for_medium"] = True
+    if getattr(args, "use_template_for_medium", None) is not None:
+        updates["use_template_for_medium"] = args.use_template_for_medium
     if updates.get("query_prompt_file") or updates.get("query_prompt_text"):
         updates["bundle_query_generation"] = True
-    if not updates:
-        return config
-    return PersonAttributeSearchConfig.model_validate({**config.model_dump(), **updates})
+    values = config.model_dump() if isinstance(config, PersonAttributeSearchConfig) else config
+    merged = override_config({**values, **updates}, getattr(args, "config_overrides", []))
+    explicit = getattr(args, "explicit_cli", set(scalar_options) | {"use_template_for_medium"})
+    fields = {scalar_options.get(name, name) for name in explicit}
+    merged.update({key: value for key, value in updates.items() if key in fields})
+    if fields & {"query_prompt_file", "query_prompt_text"} and (
+        updates.get("query_prompt_file") or updates.get("query_prompt_text")
+    ):
+        merged["bundle_query_generation"] = True
+    return PersonAttributeSearchConfig.model_validate(merged)
 
 
 def _stage_remote_inputs(

@@ -44,6 +44,7 @@ class CaptioningConfig(BaseModel):
     window_seconds: float = Field(default=10.0, gt=0.0)
     window_frames: int = Field(default=256, ge=0)
     remainder_threshold: int = Field(default=128, ge=0)
+    min_tail_seconds: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     single_window: bool = False
     sampling_fps: float = Field(default=2.0, gt=0.0)
     max_frames: int = Field(default=8, ge=1)

@@ -160,9 +160,11 @@ def test_reasoning_service_does_not_emit_service_owned_pivots(tmp_path: Path) ->
     assert "scene_description" not in outcomes
     assert "temporal_description" not in outcomes
     assert "video_summarization" not in outcomes
-    assert outcomes["events"].success is False
-    assert outcomes["msted"].success is False
-    assert outcomes["temporal_localization"].success is False
+    # No config, so no reasoning stage is enabled: none is recorded as a
+    # (failed) emitter.
+    assert "events" not in outcomes
+    assert "msted" not in outcomes
+    assert "temporal_localization" not in outcomes
 
 
 def test_reasoning_service_preserves_existing_pipeline_media_path(tmp_path: Path) -> None:
@@ -285,7 +287,7 @@ def test_reasoning_service_preserves_service_owned_emitter_state(tmp_path: Path)
     assert outcomes["chunks"].artifact == str(chunks)
     assert outcomes["mcq"].success is True
     assert outcomes["mcq"].artifact == str(mcq)
-    assert outcomes["events"].success is False
+    assert "events" not in outcomes  # disabled stages are not recorded as failures
 
 
 def test_reasoning_service_runs_llm_stage_from_captioning_artifact_layout(

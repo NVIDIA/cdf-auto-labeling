@@ -8,6 +8,7 @@ import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from core.media import video_codecs
@@ -105,6 +106,24 @@ def test_probe_video_stream_maps_timeout(monkeypatch: pytest.MonkeyPatch) -> Non
         probe_video_stream("clip.mp4")
 
 
+@pytest.mark.parametrize("tool", ["ffprobe", "ffmpeg"])
+def test_missing_ffmpeg_tools_name_the_fix(monkeypatch: pytest.MonkeyPatch, tool: str) -> None:
+    """Report the missing executable and an actionable installation hint."""
+
+    def missing(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        """Simulate an unavailable FFmpeg executable."""
+        if command[0] == tool:
+            raise FileNotFoundError(2, "No such file or directory", tool)
+        return _probe_result([{"codec_name": "vp9", "width": 16, "height": 8}])
+
+    monkeypatch.setattr(video_codecs.subprocess, "run", missing)
+
+    with pytest.raises(VideoDecodeError, match=rf"^{tool} not found\. Install ffmpeg") as exc_info:
+        prepare_video_decode("clip.webm")
+
+    assert "apt-get install ffmpeg" in str(exc_info.value)
+
+
 def test_h264_requires_working_hardware_decoder(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(video_codecs, "probe_video_stream", lambda _path: _stream("h264"))
     monkeypatch.setattr(video_codecs, "_decoder_works", lambda *_args: False)
@@ -174,3 +193,29 @@ def test_read_exact_combines_short_reads() -> None:
             return super().read(min(limit, 2))
 
     assert video_codecs._read_exact(ShortReader(b"abcdef"), 6) == b"abcdef"
+
+
+@pytest.mark.parametrize(
+    "raw_times, expected", [("0\n0.1\n0.7\n", [0.0, 0.1, 0.7]), ("inf\n", [None])]
+)
+def test_decode_preserves_frame_timestamps(
+    monkeypatch: pytest.MonkeyPatch, raw_times: str, expected: list[float | None]
+) -> None:
+    """Associate each RGB frame with its input PTS, without constant-rate duplication."""
+    process = MagicMock()
+    process.stdout = io.BytesIO(b"rgb" * len(expected))
+    process.wait.return_value = process.poll.return_value = 0
+
+    def start(command: list[str], **kwargs: object) -> MagicMock:
+        assert command[command.index("-fps_mode") + 1] == "passthrough"
+        assert command[command.index("-stats_enc_pre_fmt") + 1] == "{ti}"
+        Path(command[command.index("-stats_enc_pre") + 1]).write_text(raw_times)
+        return process
+
+    monkeypatch.setattr(video_codecs.subprocess, "Popen", start)
+    plan = video_codecs.VideoDecodePlan(VideoStreamInfo("vp9", 1, 1, 10.0), "vp9")
+    times: list[float | None] = []
+    frames = list(video_codecs.iter_decoded_rgb24_frames("clip.mp4", plan, timestamps=times))
+    assert frames == [b"rgb"] * len(expected)
+    assert times == expected
+    assert process.stdout.closed

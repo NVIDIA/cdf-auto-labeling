@@ -20,6 +20,11 @@ Each JSONL line should include:
   read-write. Services communicate by writing scene artifacts and
   `sidecars/pipeline_state.json`.
 
+Local-path operations do not require MSC, even when inline MSC configuration is
+set. MSC is initialized on first remote access; a missing MSC dependency blocks
+remote URLs, not local paths. See
+[Remote Storage](../../../../docs/user-guide/remote-storage.md).
+
 ## Scene Layout
 
 ```text

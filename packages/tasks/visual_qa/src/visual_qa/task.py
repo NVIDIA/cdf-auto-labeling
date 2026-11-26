@@ -23,13 +23,20 @@ from core import (
     write_pipeline_state,
 )
 from core.formats.daft import emit_persona_qa_daft_outputs, emit_visual_qa_daft_outputs
+from core.formats.daft.errors import DaftConvertError
 from core.media import discover_image_group
 from core.tasks import SequentialTask
 from core.utils.multistorage import MSCStorage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from visual_qa.artifacts import VISUAL_QA_ARTIFACTS_KEY, VisualQaArtifactsState
-from visual_qa.bank import QuestionBank, aggregate_window_items, load_question_bank, normalize_items
+from visual_qa.bank import (
+    QuestionBank,
+    aggregate_window_items,
+    load_question_bank,
+    normalize_items,
+    visual_qa_response_format,
+)
 from visual_qa.clients import (
     ChatRequest,
     EndpointClient,
@@ -94,8 +101,13 @@ and no prose outside the JSON fence:
 }
 ```
 
-Omit questions whose `include_if` condition is not satisfied by your own
-answers. Do not invent questions, options, objects, actions, or events.
+Return one item for every question, including questions with negative answers.
+For yes/no questions, explicitly return the No option when the evidence supports
+No; do not output only positive detections. A missing item is not a No answer.
+The only questions you may omit are those whose explicit `include_if` condition
+is not satisfied by your own answers. Copy each question id exactly. When options
+are supplied, choose one of them exactly; otherwise give a concise free-form
+answer. Do not invent questions, options, objects, actions, or events.
 {reasoning_rule}
 
 QUESTION BANK:
@@ -176,10 +188,15 @@ class VisualQaConfig(BaseModel):
     prompt_file: str | None = None
     system_prompt: str | None = None
     include_reasoning: bool = False
+    # Send a JSON schema built from the question bank as ``response_format`` on the
+    # requests that produce QA items. Helps small VLMs; needs endpoint support for
+    # ``json_schema`` (vLLM, NIM), so it is off by default.
+    constrained_json: bool = False
 
     window_seconds: float = Field(default=10.0, gt=0.0)
     window_frames: int = Field(default=256, ge=0)
     remainder_threshold: int = Field(default=128, ge=0)
+    min_tail_seconds: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     single_window: bool = False
     sampling_fps: float = Field(default=2.0, gt=0.0)
     max_frames: int = Field(default=8, ge=1)
@@ -252,6 +269,7 @@ class VisualQaTask(SequentialTask):
         self.storage = MSCStorage(self.logger)
         self._resolved_question_bank_file: Path | None = None
         self._question_driven_evidence_prompt: str | None = None
+        self._qa_response_format: dict[str, Any] | None = None
         self.vlm_client = _build_vlm_client(self.config) if _uses_vlm(self.config) else None
         self.llm_client = _build_llm_client(self.config) if _uses_llm(self.config) else None
 
@@ -283,7 +301,7 @@ class VisualQaTask(SequentialTask):
                 windows_json=None,
                 source_sidecar=None,
             )
-            _record_daft_outputs(data_entry, ())
+            _record_daft_outputs(data_entry, (), failed=self.config.emit_flat_qa_tasks)
             return data_entry
 
         bank = self._load_bank()
@@ -319,6 +337,11 @@ class VisualQaTask(SequentialTask):
         item_payload["question_bank"] = self._bank_metadata(bank)
         if all_errors:
             item_payload["warnings"] = all_errors
+            self.logger.warning(
+                "Visual QA dropped %d model item(s) it could not use: %s",
+                len(all_errors),
+                "; ".join(all_errors[:3]) + (" ..." if len(all_errors) > 3 else ""),
+            )
 
         window_payload: dict[str, object] = {
             "schema_version": "1",
@@ -362,6 +385,9 @@ class VisualQaTask(SequentialTask):
             return None
 
         bank = self._load_bank()
+        self._qa_response_format = (
+            visual_qa_response_format(bank) if self.config.constrained_json else None
+        )
         if self.config.generation_mode == "question-driven-vlm-llm":
             question_bank_path = self._question_bank_path()
             if question_bank_path is None:
@@ -452,7 +478,14 @@ class VisualQaTask(SequentialTask):
                     Path(self.config.image_group_dir).expanduser()
                 )
             else:
-                windows = self._generate_from_media(media_path=media_path, qa_prompt=qa_prompt)
+                windowing_metadata: dict[str, Any] = {}
+                windows = self._generate_from_media(
+                    media_path=media_path,
+                    qa_prompt=qa_prompt,
+                    windowing_metadata=windowing_metadata,
+                )
+                if windowing_metadata:
+                    extra_payload["windowing"] = windowing_metadata
                 payload_source_key = "source_media"
                 payload_source_value = str(media_path)
 
@@ -585,7 +618,13 @@ class VisualQaTask(SequentialTask):
             }
         ]
 
-    def _generate_from_media(self, *, media_path: Path, qa_prompt: str) -> list[dict[str, Any]]:
+    def _generate_from_media(
+        self,
+        *,
+        media_path: Path,
+        qa_prompt: str,
+        windowing_metadata: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         if is_image_path(media_path):
             image_payload = read_image_payload(media_path)
             generated = self._generate_for_window(
@@ -605,6 +644,30 @@ class VisualQaTask(SequentialTask):
 
         info = probe_video(media_path)
         windows = plan_windows(info, self.config)
+        skipped_tail = None
+        if (
+            self.config.window_frames == 0
+            and not self.config.single_window
+            and len(windows) > 1
+            and windows[-1].end_s - windows[-1].start_s
+            < min(self.config.min_tail_seconds, self.config.window_seconds)
+        ):
+            tail = windows.pop()
+            skipped_tail = {
+                "start_s": tail.start_s,
+                "end_s": tail.end_s,
+                "reason": "below_min_tail_seconds",
+            }
+            self.logger.info(
+                "Skipping trailing window %.3f-%.3fs: below %.3fs minimum",
+                tail.start_s,
+                tail.end_s,
+                self.config.min_tail_seconds,
+            )
+        if windowing_metadata is not None:
+            windowing_metadata.update(
+                min_tail_seconds=self.config.min_tail_seconds, skipped_tail=skipped_tail
+            )
         generated_windows: list[dict[str, Any]] = []
         for window in windows:
             media_payloads, input_mode, media_error = self._window_media_payloads(
@@ -628,6 +691,13 @@ class VisualQaTask(SequentialTask):
             except Exception as exc:
                 if self.config.media_mode != "auto" or input_mode != "video":
                     raise
+                self.logger.warning(
+                    "Video-mode VLM call failed for window %.3f-%.3fs (%s); "
+                    "retrying with sampled frames.",
+                    window.start_s,
+                    window.end_s,
+                    _exception_summary(exc),
+                )
                 media_payloads = extract_window_frames(
                     media_path=media_path,
                     window=window,
@@ -713,6 +783,7 @@ class VisualQaTask(SequentialTask):
                     max_tokens=self.config.max_tokens,
                     temperature=self.config.temperature,
                     top_p=self.config.top_p,
+                    response_format=self._qa_response_format,
                 )
             )
             parsed_qa = extract_json_object(raw)
@@ -764,6 +835,7 @@ class VisualQaTask(SequentialTask):
                         max_tokens=self.config.max_tokens,
                         temperature=self.config.temperature,
                         top_p=self.config.top_p,
+                        response_format=self._qa_response_format,
                     )
                 )
                 llm_payload = _visual_qa_payload(
@@ -819,6 +891,7 @@ class VisualQaTask(SequentialTask):
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
                 top_p=self.config.top_p,
+                response_format=self._qa_response_format,
             )
         )
         parsed_qa = extract_json_object(raw)
@@ -848,6 +921,13 @@ class VisualQaTask(SequentialTask):
             except MediaDecodeError as exc:
                 if self.config.media_mode == "video":
                     raise
+                self.logger.warning(
+                    "Could not build a video payload for window %.3f-%.3fs (%s); "
+                    "using sampled frames.",
+                    window.start_s,
+                    window.end_s,
+                    exc,
+                )
                 media_error = f"video_payload_failed:{exc.__class__.__name__}"
         else:
             media_error = None
@@ -937,12 +1017,16 @@ class VisualQaTask(SequentialTask):
         written: tuple[Path, ...] = ()
         if success:
             if self.config.emit_flat_qa_tasks:
-                written = emit_visual_qa_daft_outputs(
-                    data_entry.data_path,
-                    scene_ctx,
-                    visual_qa_artifacts=visual_qa_artifacts,
-                    logger=self.logger,
-                )
+                try:
+                    written = emit_visual_qa_daft_outputs(
+                        data_entry.data_path,
+                        scene_ctx,
+                        visual_qa_artifacts=visual_qa_artifacts,
+                        logger=self.logger,
+                    )
+                except DaftConvertError:
+                    _record_daft_outputs(data_entry, (), failed=True)
+                    raise
             else:
                 self.logger.info(
                     "Visual QA flat DAFT task emission disabled; skipping mcq/bcq/open_qa."
@@ -957,7 +1041,7 @@ class VisualQaTask(SequentialTask):
                 written = (*written, persona_qa)
             if written:
                 self.logger.info("Visual QA wrote %d DAFT pivot file(s).", len(written))
-        _record_daft_outputs(data_entry, written)
+        _record_daft_outputs(data_entry, written, failed=not success)
 
 
 class _GeneratedQaWindow(BaseModel):
@@ -1180,6 +1264,12 @@ def _stage_metadata() -> dict[str, str]:
     }
 
 
+def _exception_summary(exc: BaseException, limit: int = 300) -> str:
+    """Return ``Class: message`` truncated for a log line."""
+    text = f"{exc.__class__.__name__}: {exc}"
+    return text if len(text) <= limit else f"{text[: limit - 3]}..."
+
+
 def _append_failure_reason(existing: str | None, new_reason: str) -> str:
     if existing:
         return f"{existing};{new_reason}"
@@ -1225,13 +1315,29 @@ def _first_existing_path(*values: object) -> Path | None:
     return None
 
 
-def _record_daft_outputs(data_entry: DataEntry, written: tuple[Path, ...]) -> None:
+def _record_daft_outputs(
+    data_entry: DataEntry, written: tuple[Path, ...], *, failed: bool = False
+) -> None:
+    """Record flat QA files: written ones succeed; on failure all count as failed.
+
+    Otherwise an unwritten type is not applicable (the bank had no question of
+    that type, or flat emission is off); a conversion failure is logged as a
+    warning where it happens.
+    """
     written_by_name = {path.stem: path for path in written}
+    if failed:
+        artifacts = {name: written_by_name.get(name) for name in VISUAL_QA_DAFT_EMITTERS}
+    else:
+        artifacts = dict(written_by_name)
     update_annotation_export_state(
         data_entry.data_path,
         data_entry_id=data_entry.id,
         media_path=data_entry.media_path,
-        emitter_artifacts={name: written_by_name.get(name) for name in VISUAL_QA_DAFT_EMITTERS},
+        emitter_artifacts=artifacts,
+        # Reasoning also owns open_qa; preserve its outcome when VQA does not write it.
+        not_applicable=[
+            name for name in VISUAL_QA_DAFT_EMITTERS if name not in artifacts and name != "open_qa"
+        ],
     )
 
 

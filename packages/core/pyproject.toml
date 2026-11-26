@@ -9,14 +9,17 @@ authors = [
 ]
 dependencies = [
     "jsonschema>=4.20.0",
-    "multi-storage-client>=0.48.0",
-    "multi-storage-client[boto3]>=0.48.0",
+    # Remote storage only; no Windows wheels exist (core.utils.multistorage imports it lazily).
+    "multi-storage-client>=0.48.0; sys_platform != 'win32'",
+    "multi-storage-client[boto3]>=0.48.0; sys_platform != 'win32'",
+    "omegaconf>=2.3.0,<3",
     "openai>=1.61.0,<3",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp",
     "opentelemetry-instrumentation-openai-v2",
     "opentelemetry-instrumentation-logging",
-    "pydantic>=2.0.0"
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.2,<7"
 ]
 
 [project.optional-dependencies]

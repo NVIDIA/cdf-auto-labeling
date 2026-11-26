@@ -42,6 +42,69 @@ existing pages there (what it does, prerequisites, numbered run steps, verify,
 troubleshoot) so operators can find and run it the same way they find every
 other service.
 
+### Configuration contract
+
+Use `ServiceInterface.build_parser()` for every service entrypoint. It supplies
+`--config-file`, `--set`, and named-flag precedence through the shared
+`core.interfaces.config_args` module. Keep the order **defaults → file settings →
+`--set` → explicit named flags**, and validate the final configuration with the
+service's Pydantic model.
+
+Reuse `read_config()` for file loading and `override_config()` for dotted updates;
+the latter uses OmegaConf with replacement semantics. Do not introduce another
+service-specific override parser or enable interpolation of prompt strings.
+Services with nested task schemas, such as PAS and Reasoning, select their task
+section and map named flags to task fields, but use these same shared helpers.
+Reuse `args.config_snapshot` during execution instead of reading the file again.
+See [Configuration files and CLI overrides](../user-guide/services/README.md#configuration-files-and-cli-overrides)
+for the supported file shapes and command examples.
+
+## Bringing Your Own Detector
+
+A detector backend plugs into the existing detection-and-tracking service; it
+does not need a new task or service. Subclass `Tracker`, write the canonical
+artifacts with `write_tracking_artifacts`, and publish a builder in your own
+package under the `cdf.trackers` entry-point group:
+
+```python
+# my_detector/tracker.py
+from detection_and_tracking import DetectionAndTrackingConfig
+from detection_and_tracking.backends.runtime import (
+    instances_json_path, objects_json_path, write_tracking_artifacts,
+)
+from detection_and_tracking.tracker import Tracker, TrackingResult
+
+
+class MyTracker(Tracker):
+    def run(self, media_path, scene_paths, *, scene_ctx) -> TrackingResult:
+        frames, instances = ...  # your model; see the field contract below
+        write_tracking_artifacts(
+            scene_paths=scene_paths, scene_ctx=scene_ctx, frames=frames, instances=instances
+        )
+        return TrackingResult(
+            success=True,
+            objects_json=objects_json_path(scene_paths),
+            instances_json=instances_json_path(scene_paths),
+        )
+
+
+def build_tracker(logger, config: DetectionAndTrackingConfig) -> Tracker:
+    return MyTracker(logger)
+```
+
+```toml
+# my_detector/pyproject.toml
+[project.entry-points."cdf.trackers"]
+my-detector = "my_detector.tracker:build_tracker"
+```
+
+Install it into the same environment and run
+`make run SCRIPT=detection-and-tracking-service:main ARGS="--tracker my-detector --input-file <input.jsonl>"`. No CDF file changes
+are needed; an unknown `--tracker` lists the registered kinds. For
+`--extract-crops`, write the `instances.json` fields in
+[Artifact Contract §1.3](architecture/artifact-contract.md#13-instancesjson-fields-read-by-crop-extraction).
+Use the RF-DETR backend (`backends/rfdetr.py`) as a complete reference.
+
 ## Related Guidance
 
 - [Local Development](local-development.md) — contributor checks, templates,
